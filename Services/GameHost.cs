@@ -504,6 +504,7 @@ public sealed class GameHost : IDisposable
         _talkMode = mode;
         _endCallSoon = false;
         _offenceThisTalk = 0;
+        _apologisedThisTalk = false;
         _chat.Clear();
         _partial = "";
         var fx = !Settings.RadioEffect ? VoiceFx.Clear : mode switch { TalkMode.Phone => VoiceFx.Phone, TalkMode.Intercom => VoiceFx.Intercom, _ => VoiceFx.Clear };
@@ -685,11 +686,12 @@ public sealed class GameHost : IDisposable
     /// <summary>Speech never waits for this. The newest exchange replaces a note taking still in progress.</summary>
     private void OnExchangeDone(Conversation talk)
     {
-        if (_talk != talk || _talkMission is not { } m) return;
+        if (_talk != talk) return;
+        var m = _talkMission;
         _scribeCts?.Cancel();
         var cts = new CancellationTokenSource();
         _scribeCts = cts;
-        string prompt = Prompts.ScribeUser(DateTimeOffset.Now, m.Plan, talk.TranscriptLines(Career.PilotName).TakeLast(30), MinutesAwayFor(m));
+        string prompt = Prompts.ScribeUser(DateTimeOffset.Now, m?.Plan ?? new MissionPlan(), talk.TranscriptLines(Career.PilotName).TakeLast(30), m is null ? 15 : MinutesAwayFor(m));
         _ = Task.Run(async () =>
         {
             try
@@ -707,30 +709,47 @@ public sealed class GameHost : IDisposable
     }
 
     private int _offenceThisTalk;
+    private bool _apologisedThisTalk;
 
-    private void HandleOffence(Mission m, PlanPatch p)
+    private void HandleOffence(Mission? m, PlanPatch p)
     {
         if (p.OffenceSeverity is not { } severity || severity <= _offenceThisTalk) return;
+        var pilotLines = _talk?.TranscriptLines(Career.PilotName).Where(l => l.StartsWith(Career.PilotName + ":")).ToList() ?? [];
+        if (!Offences.SaidByPilot(p.OffenceQuote, pilotLines))
+        {
+            Log.Info("Game", $"Ignored an offence with no words from the pilot behind it: {p.OffenceNote}");
+            return;
+        }
         _offenceThisTalk = severity;
         var present = _talk?.Cast.Select(c => c.Person).ToList() ?? [];
         string what = string.IsNullOrWhiteSpace(p.OffenceNote) ? L.T("You behaved badly towards them") : p.OffenceNote!;
-        // The pilot's own words. The note taker's quote only counts if it is really in the conversation, or it would be made up.
-        string? said = _talk?.TranscriptLines(Career.PilotName).Where(l => l.StartsWith(Career.PilotName + ":")).ToList() is { Count: > 0 } lines
-            && !string.IsNullOrWhiteSpace(p.OffenceQuote) && lines.Any(l => l.Contains(p.OffenceQuote!, StringComparison.OrdinalIgnoreCase)) ? p.OffenceQuote : _talk?.LastPilotWords;
-        if (!string.IsNullOrWhiteSpace(said)) what += " " + L.F("The pilot said: \"{0}\"", said!.Trim());
+        what += " " + L.F("The pilot said: \"{0}\"", p.OffenceQuote!.Trim());
         Offences.Apply(Career, m, present, what, severity, DateTimeOffset.Now);
         Log.Info("Game", $"Offence, severity {severity}: {what}");
         if (severity >= 2)
         {
             Toast?.Invoke(what);
             if (_talkMode is not TalkMode.Intercom and not TalkMode.Debrief) _endCallSoon = true;
-            DespawnPeople(m);
+            if (m is not null) DespawnPeople(m);
         }
     }
 
-    private void ApplyPatch(Mission m, PlanPatch p)
+    private void ApplyPatch(Mission? m, PlanPatch p)
     {
         HandleOffence(m, p);
+        if (p.Apology == true && !_apologisedThisTalk && _offenceThisTalk == 0 && _talk is { } sorry)
+        {
+            _apologisedThisTalk = true;
+            Offences.Apologise(sorry.Cast.Select(c => c.Person).ToList(), DateTimeOffset.Now);
+            Log.Info("Game", "The pilot said sorry");
+        }
+        if (m is null)
+        {
+            if (p.CallIsOver == true && _talkMode == TalkMode.Phone) _endCallSoon = true;
+            Save();
+            Changed?.Invoke();
+            return;
+        }
         if (m.Phase == MissionPhase.Cancelled) { Save(); Changed?.Invoke(); return; }
         if (_talkMode is TalkMode.Intercom or TalkMode.Debrief) { Changed?.Invoke(); return; }
         if (p.TourPlace is { Length: > 1 } place && !m.Stops.Any(x => x.Name.Contains(place, StringComparison.OrdinalIgnoreCase)))

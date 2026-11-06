@@ -34,6 +34,7 @@ public sealed record PlanPatch
     /// <summary>What the pilot did wrong, in one plain Norwegian sentence.</summary>
     public string? OffenceNote { get; init; }
     public string? OffenceQuote { get; init; }
+    public bool? Apology { get; init; }
     public int? OffenceSeverity { get; init; }
 }
 

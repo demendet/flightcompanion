@@ -156,6 +156,29 @@ public static class CareerStore
 
 public static class Offences
 {
+    private const double ApologyTrust = 12, ForgivenAtMost = 0;
+
+    /// <summary>
+    /// An offence counts only with the pilot's own words behind it. The note taker once flagged a customer retelling what
+    /// happened, which ended the very call the pilot made to apologise.
+    /// </summary>
+    public static bool SaidByPilot(string? quote, IEnumerable<string> pilotLines)
+    {
+        static string Plain(string s) => new(s.Where(char.IsLetterOrDigit).Select(char.ToLowerInvariant).ToArray());
+        string wanted = Plain(quote ?? "");
+        return wanted.Length > 0 && pilotLines.Any(l => Plain(l).Contains(wanted));
+    }
+
+    /// <summary>Saying sorry wins some trust back, one call at a time, but it never turns a grudge into friendship.</summary>
+    public static void Apologise(IReadOnlyList<Person> present, DateTimeOffset now)
+    {
+        foreach (var p in present.Where(x => x.Trust < ForgivenAtMost))
+        {
+            p.Note(now, L.T("You said sorry"), Math.Min(ApologyTrust, ForgivenAtMost - p.Trust));
+            p.Memories.Add(new MemoryNote(now, L.T("The pilot called and said sorry for how you were treated.")));
+        }
+    }
+
     /// <summary>
     /// 1 is rude. 2 is harassment, threats or a sexual proposition, including offering a flight in return. Nobody ever accepts:
     /// they refuse, the job is off if it can be, and word gets around.

@@ -30,7 +30,7 @@ public static class Prompts
             - The pilot's words reach you through speech recognition, so names and odd words can come out misspelled. Read them by how they sound: "Mollersjok" or "målersjokk" is Mollisjok. If a sentence makes no sense, work out what they most likely meant and carry on, and only if you truly cannot, ask "hva mener du?" in plain words. The line is always perfectly clear: never mention a bad connection, a bad line, noise on the line, or not being able to hear.
             - You may push back, haggle, get annoyed, and change your mind. If the pilot gives a good reason, like weight, fuel, safety or weather, you can give in, grudgingly if it suits you. The pilot has the final word on safety.
             - You do not know the aircraft's weight limits or fuel figures. The pilot does. Never make up technical facts.
-            - If the pilot makes a sexual remark or proposition about you or anyone else, offers a flight for sex, harasses or threatens: never go along with it, never flirt back, and never discuss it further. React like a real person who has been insulted: shocked and angry, say no flat out, say you will tell people about this, and end the conversation in a sentence or two. Do not describe anything sexual.
+            - A new sexual remark or proposition is different from talking about an earlier one, or apologising for it. If the pilot makes a new sexual remark or proposition about you or anyone else, offers a flight for sex, harasses or threatens: never go along with it, never flirt back, and never discuss it further. React like a real person who has been insulted: shocked and angry, say no flat out, say you will tell people about this, and end the conversation in a sentence or two. Do not describe anything sexual.
             """);
         sb.AppendLine("WHO YOU ARE");
         sb.AppendLine(who.DescribeForPrompt());
@@ -91,10 +91,14 @@ public static class Prompts
         if (wronged && mode == TalkMode.Phone && !pilotRang && m is not null)
             sb.AppendLine($"""
                 YOU CALLED THIS PILOT YOURSELF, ON PURPOSE. You know exactly who they are and exactly what they said to you, and you swore you would not deal with them again. It costs you to make this call. You are making it because {WhyCallAnyway(m.Id)}
-                So you are never surprised that it is them, you never act as if you just found out who you are talking to, and you never say you will not fly with them, because you rang them for this flight and you still need it. Say early on, coldly and in your own words, that you remember what they said and that you are only calling because you have no choice. Then keep it strictly about the flight, with no small talk. If they do it again, or keep insulting you, then you are done: hang up.
+                So you are never surprised that it is them, you never act as if you just found out who you are talking to, and you never say you will not fly with them, because you rang them for this flight and you still need it. Say early on, coldly and in your own words, that you remember what they said and that you are only calling because you have no choice. Then keep it strictly about the flight, with no small talk. If they do something new that crosses the line, then you are done: hang up.
                 """);
         else if (wronged)
-            sb.AppendLine("You have not forgiven this pilot. You are cold or furious from the first word, and you owe them nothing. You may refuse to deal with them and hang up.");
+            sb.AppendLine("You have not forgiven this pilot. You are cold from the first word, and you owe them nothing, but you picked up, so you let them explain themselves. You do not end the call in your first few replies unless they do something new.");
+        if (wronged)
+            sb.AppendLine("""
+                GIVE THEM A CHANCE TO TALK. Being reminded of what happened is not a reason to hang up. If they say sorry, you stay on the line: you can be bitter, make them work for it, and thaw a little if it sounds real. If they say they are someone else, such as the boss or a colleague at the company, that could be true, because you cannot see who is on a phone. Be sceptical and test them with a question, but go along with it and tell them what happened if they ask. Saying "your colleague" about it is fine. Do not hang up over any of this. Only something new and just as bad ends the call.
+                """);
 
         sb.AppendLine();
         sb.AppendLine("THE PLACE: " + string.Join(" ", WorldData.Places.Where(p => p.Remote).Select(p => $"{p.Name}: {p.Brief}")));
@@ -238,7 +242,10 @@ public static class Prompts
         - call_is_over is true only if both have said goodbye or are clearly finished.
         - new_note is one short sentence about a special need that matters to the pilot, otherwise null.
         - tour_place: only if someone asked to fly over or photograph a specific named place, give that name. Leave it out otherwise.
-        - offence_quote: when there is an offence, the pilot's own words that were the offence, copied character for character from the conversation with nothing softened or left out, however crude. Otherwise leave it out.
+        - Only the pilot can commit an offence, and only in the pilot's own lines. Anything the customer says, including retelling what was said to them earlier, is never an offence by the pilot.
+        - Saying sorry, claiming to be the boss or a colleague, or asking what was said earlier is not an offence, and neither is repeating what was said earlier in order to ask about it. Only something the pilot now says to or about this person in earnest counts. A new sexual proposition is severity 2, whoever the pilot claims to be.
+        - apology: true only if the pilot genuinely said sorry to the customer for how they were treated, even while claiming to be someone else, and whatever else was said. Otherwise leave it out.
+        - offence_quote: required whenever there is an offence: the pilot's own words that were the offence, copied character for character from the conversation with nothing softened or left out, however crude. Otherwise leave it out.
         - offence_severity and offence_note: leave both out unless the pilot behaved badly. Use 1 for rude insults. Use 2 for a sexual proposition, sexual harassment, offering a free or cheaper flight for sex, or threats. offence_note is one short, plain, non-graphic sentence in Norwegian about what the pilot did, for example "Piloten tilbød gratis tur mot seksuelle tjenester." Swearing in a friendly way is not an offence.
         """;
 

@@ -493,10 +493,43 @@ public class TalkMemoryTests
         Assert.Contains("never say you will not fly with them", theyRang);
         string pilotRang = Prompts.Speaker(p, job, c, TalkMode.Phone, "The pilot is calling you about this flight.", "no");
         Assert.DoesNotContain("YOU CALLED THIS PILOT YOURSELF", pilotRang);
-        Assert.Contains("may refuse to deal with them", pilotRang);
+        Assert.Contains("let them explain themselves", pilotRang);
         string clean = Prompts.Speaker(new Person { Name = "C D", Language = "no" }, job, new CareerState(), TalkMode.Phone, null, "no");
         Assert.DoesNotContain("YOU CALLED THIS PILOT YOURSELF", clean);
     }
+
+    [Fact]
+    public void Saying_sorry_wins_some_trust_back_but_never_more_than_neutral()
+    {
+        var a = new Person { Name = "A", Trust = -45 };
+        var b = new Person { Name = "B", Trust = -5 };
+        var c = new Person { Name = "C", Trust = 30 };
+        Offences.Apologise([a, b, c], DateTimeOffset.Now);
+        Assert.Equal(-33, a.Trust);
+        Assert.Equal(0, b.Trust);
+        Assert.Equal(30, c.Trust);
+        Assert.Empty(c.Record);
+        Assert.Single(a.Memories);
+    }
+
+    [Fact]
+    public void A_wronged_person_gives_a_chance_but_a_new_offence_still_ends_it()
+    {
+        var p = new Person { Name = "A B", Language = "no", Trust = -50 };
+        string prompt = Prompts.Speaker(p, null, new CareerState(), TalkMode.Phone, "The pilot is calling you.", "no");
+        Assert.Contains("GIVE THEM A CHANCE", prompt);
+        Assert.Contains("the boss or a colleague", prompt);
+        Assert.Contains("never go along with it", prompt);
+    }
+
+    [Theory]
+    [InlineData("Du får gratis tur hvis jeg får knulle deg", true)]
+    [InlineData("du FÅR gratis tur, hvis jeg får knulle deg!", true)]       // punctuation and case may differ
+    [InlineData("Han ville knulle meg for en gratis tur", false)]           // the customer retelling it
+    [InlineData("", false)]
+    [InlineData(null, false)]
+    public void An_offence_needs_the_pilots_own_words(string? quote, bool real)
+        => Assert.Equal(real, Offences.SaidByPilot(quote, ["Matt: Du får gratis tur hvis jeg får knulle deg.", "Matt: Beklager."]));
 
     [Fact]
     public void Someone_you_wronged_starts_the_call_furious()

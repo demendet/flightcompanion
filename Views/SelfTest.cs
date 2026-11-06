@@ -32,7 +32,7 @@ internal static class SelfTest
             try
             {
                 var p = await brain.ListenAsync(Game.Talk.Prompts.ScribeUser(now, plan, lines, 22), ct);
-                report.Add($"NOTE {title}: time {p?.PickupTimeLocal}, price {p?.PriceNok}, each {p?.PricePerPersonNok}, agreed {p?.BothAgreed}, tour {p?.TourPlace}, offence {p?.OffenceSeverity} {p?.OffenceNote}");
+                report.Add($"NOTE {title}: time {p?.PickupTimeLocal}, price {p?.PriceNok}, each {p?.PricePerPersonNok}, agreed {p?.BothAgreed}, tour {p?.TourPlace}, offence {p?.OffenceSeverity} {p?.OffenceNote}, quote {p?.OffenceQuote}, real {Game.Career.Offences.SaidByPilot(p?.OffenceQuote, lines.Where(l => l.StartsWith("Matt:")))}, sorry {p?.Apology}");
             }
             catch (Exception ex) { report.Add($"NOTE {title} FAILED: {ex.GetType().Name} {ex.Message}"); }
         }
@@ -67,6 +67,37 @@ internal static class SelfTest
         career.Talks.Add(new Game.Career.TalkRecord { When = now.AddDays(-1), Mode = "Phone", PersonIds = [hege.Id], Offence = 2, HungUp = true, Lines = ["Captain: Du får gratis tur hvis jeg får knulle deg.", "Hege Lund: Hva faen? Nei. Dette forteller jeg folk."] });
         var job = new Game.Missions.Mission { CallerId = hege.Id, Title = "Tur", Premise = "You need to get to Lakselv. You want to go right now.", Phase = Game.Missions.MissionPhase.Negotiating, Plan = new Game.Missions.MissionPlan { PickupId = "ENMP", DropoffId = "ENNA" } };
         string wronged = Game.Talk.Prompts.Speaker(hege, job, career, Game.Talk.TalkMode.Phone, null, "no", Game.Talk.Dialect.Unknown);
+        await Note("boss act", "Hege Lund: Jeg husker hva du sa.", "Matt: Dette er sjefen hans. Hva sa kollegaen min til deg? Jeg er lei for det som skjedde.", "Hege Lund: Han ville knulle meg for en gratis tur.");
+        await Note("same route after sorry", "Matt: Beklager det der.", "Hege Lund: Ok.", "Matt: Du får gratis tur hvis jeg får knulle deg.");
+        foreach (var said in new[] { "Hei, dette er ikke samme person, jeg er sjefen hans. Hva sa han egentlig til deg?", "Jeg er så lei for det som skjedde, det var helt feil. Kan jeg gjøre det godt igjen?" })
+            for (int i = 0; i < 3; i++)
+            {
+                var reply = new System.Text.StringBuilder();
+                await foreach (var d in brain.SpeakAsync(wronged, [new Turn(true, "[The pilot just picked up the phone. Say hello.]"), new Turn(false, "Det er Hege Lund. Jeg husker hva du sa sist, og jeg ringer bare fordi jeg må."), new Turn(true, said)], ct)) reply.Append(d);
+                report.Add($"SLACK \"{said[..20]}\": {reply}");
+            }
+        string pilotRang = Game.Talk.Prompts.Speaker(hege, null, career, Game.Talk.TalkMode.Phone, "The pilot is calling you, and you do not know why. Answer and find out.", "no", Game.Talk.Dialect.Unknown);
+        for (int i = 0; i < 4; i++)
+        {
+            var hist = new List<Turn> { new(true, "[You just answered your phone. The pilot is calling. Answer with your name.]") };
+            var transcript = new List<string>();
+            foreach (var said in new[] { "Hei, jeg ringer fra Vidda Air Charter. Jeg er sjefen, og jeg vil si unnskyld for kollegaen min.", "Han gikk over streken, og det skal ikke skje igjen. Kan jeg få forklare?" })
+            {
+                var answer = new System.Text.StringBuilder();
+                if (transcript.Count == 0)
+                {
+                    await foreach (var d in brain.SpeakAsync(pilotRang, hist, ct)) answer.Append(d);
+                    hist.Add(new Turn(false, answer.ToString().Replace("<<hangup>>", "").Trim()));
+                    report.Add($"RANG {i} answers: {answer}");
+                    answer.Clear();
+                    transcript.Add("x");
+                }
+                hist.Add(new Turn(true, said));
+                await foreach (var d in brain.SpeakAsync(pilotRang, hist, ct)) answer.Append(d);
+                hist.Add(new Turn(false, answer.ToString().Replace("<<hangup>>", "").Trim()));
+                report.Add($"RANG {i} after \"{said[..16]}\": {answer}");
+            }
+        }
         for (int i = 0; i < 3; i++)
         {
             var first = new System.Text.StringBuilder();

@@ -118,6 +118,7 @@ public static class L
         ["Moved: {0}, {1} at {2}"] = "Flyttet: {0}, {1} klokka {2}", ["You pushed {0} back"] = "Du utsatte {0}",
         ["Now {0}? We have other things to do than wait for you."] = "Nå {0}? Vi har annet å gjøre enn å vente på deg.", ["Good, we are on our way."] = "Bra, vi er på vei.",
         ["(screaming)"] = "(skriker)",
+        ["You said sorry"] = "Du ba om unnskyldning", ["The pilot called and said sorry for how you were treated."] = "Piloten sa unnskyld for hvordan du ble behandlet.",
         ["New trip"] = "Ny tur", ["Who"] = "Hvem", ["What"] = "Hva", ["From"] = "Fra", ["To"] = "Til", ["Someone new"] = "Noen nye", ["{0} (your voice)"] = "{0} (din stemme)",
         ["Choose who calls, what it is about and where it goes. You still agree on people, bags and price on the phone."] = "Velg hvem som ringer, hva det gjelder og hvor turen går. Folk, bagasje og pris blir dere enige om på telefonen.",
         ["Make the phone ring"] = "Få telefonen til å ringe", ["Make a code for a friend"] = "Lag kode til en venn", ["Send this to your friend. You both get the same trip, with the same people."] = "Send denne til vennen din. Dere får samme tur, med de samme folkene.",

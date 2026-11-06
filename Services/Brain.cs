@@ -103,6 +103,7 @@ public sealed class Brain(KeyStore keys, AppSettings settings) : ISpeakerModel
         props["offence_note"] = new { type = "string" };
         props["offence_quote"] = new { type = "string" };
         props["offence_severity"] = new { type = "integer" };
+        props["apology"] = new { type = "boolean" };
         return new Dictionary<string, JsonElement>
         {
             ["type"] = JsonSerializer.SerializeToElement("object"),
@@ -148,7 +149,7 @@ public sealed class Brain(KeyStore keys, AppSettings settings) : ISpeakerModel
                 PickupTimeLocal = S("pickup_time_local"), ReturnTimeLocal = S("return_time_local"),
                 PriceNok = D("price_nok"), PricePerPersonNok = D("price_per_person_nok"), BothAgreed = B("both_agreed"), PilotDeclined = B("pilot_declined"),
                 CallIsOver = B("call_is_over"), NewNote = S("new_note"),
-                TourPlace = S("tour_place"), OffenceNote = S("offence_note"), OffenceQuote = S("offence_quote"), OffenceSeverity = D("offence_severity") is { } sev ? (int)sev : null,
+                TourPlace = S("tour_place"), OffenceNote = S("offence_note"), OffenceQuote = S("offence_quote"), Apology = B("apology"), OffenceSeverity = D("offence_severity") is { } sev ? (int)sev : null,
             };
         }
         catch (JsonException ex)
