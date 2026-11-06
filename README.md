@@ -4,10 +4,14 @@ Et karrierespill for Microsoft Flight Simulator 2024. Du driver et lite flyselsk
 
 ## Slik installerer du
 
-Du trenger Windows 10 eller 11 og en mikrofon. Åpne PowerShell og kjør disse tre linjene, én om gangen:
+Du trenger Windows 10 eller 11 og en mikrofon. Åpne PowerShell og kjør disse linjene, én om gangen:
 
 ```powershell
-winget install Git.Git Microsoft.DotNet.SDK.9
+winget install Git.Git
+```
+
+```powershell
+winget install Microsoft.DotNet.SDK.9
 ```
 
 Lukk PowerShell og åpne det på nytt, så Windows finner de nye programmene:
