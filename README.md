@@ -16,7 +16,7 @@ Første start tar litt ekstra tid og laster ned talegjenkjenningen, omtrent 1,1 
 
 ## Slik oppdaterer du
 
-Lukk spillet, og kjør dette inne i mappa `flightcompanion`:
+Lukk Flight Companion-vinduet (simulatoren kan stå åpen), og kjør dette inne i mappa `flightcompanion`:
 
 ```powershell
 git pull
