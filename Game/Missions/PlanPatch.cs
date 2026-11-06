@@ -98,9 +98,9 @@ public static class PlanPatcher
             plan.ReturnTime = back;
         }
         double? totalBefore = plan.PriceNok;
-        if (p.PricePerPersonNok is { } each and >= 0)
+        if (p.PricePerPersonNok is { } perHead and >= 0)
         {
-            plan.PricePerPersonNok = each;
+            plan.PricePerPersonNok = perHead;
         }
         else if (p.PriceNok is { } price and >= 0 && (plan.PricePerPersonNok is not null || plan.PriceNok is null || Math.Abs(plan.PriceNok.Value - price) >= 1))
         {
