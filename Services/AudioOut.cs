@@ -128,6 +128,7 @@ public sealed class VoiceChannel : IDisposable
         };
         ISampleProvider s = _buffer.ToSampleProvider();
         s = new VoiceFilter(s, fx);
+        s = new LiveVolume(s, audio);
         s = new WdlResamplingSampleProvider(s, 48000);
         _chain = new MonoToStereoSampleProvider(s);
         audio.AddInput(_chain);
@@ -152,6 +153,20 @@ public sealed class VoiceChannel : IDisposable
     }
 
     public void Dispose() => _audio.RemoveInput(_chain);
+}
+
+/// <summary>Follows the volume slider while someone is talking. Limited so a loud setting cannot overdrive the output.</summary>
+internal sealed class LiveVolume(ISampleProvider src, AudioOut audio) : ISampleProvider
+{
+    public WaveFormat WaveFormat => src.WaveFormat;
+
+    public int Read(float[] buffer, int offset, int count)
+    {
+        int n = src.Read(buffer, offset, count);
+        float v = audio.Volume;
+        for (int i = offset; i < offset + n; i++) buffer[i] = Math.Clamp(buffer[i] * v, -1f, 1f);
+        return n;
+    }
 }
 
 /// <summary>Band limits that make a call sound like a call and an intercom like an intercom.</summary>

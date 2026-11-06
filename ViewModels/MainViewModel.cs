@@ -82,6 +82,11 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private void LiveTick()
     {
         MicLevel = _host.MicLevel;
+        if (_volumeDirty && !Dragging())
+        {
+            _volumeDirty = false;
+            _host.Settings.Save();
+        }
         var t = _host.Latest;
         LiveLine = t is null ? L.T("No flight") :
             t.OnGround ? L.F("On the ground, {0:0} kt, fuel {1:0} gal", t.GroundSpeedKt, t.FuelGal)
@@ -96,6 +101,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
             _host.SetMuted(scroll);
         }
     }
+
+    private static bool Dragging() => (GetKeyState(0x01) & 0x8000) != 0;   // left mouse button: saves once the slider is let go
 
     [DllImport("user32.dll")]
     private static extern short GetKeyState(int key);
@@ -123,6 +130,21 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public ICommand GoLogbook => new RelayCommand(() => Go(Page.Logbook));
     public ICommand GoMoney => new RelayCommand(() => Go(Page.Money));
     public ICommand GoSettings => new RelayCommand(() => Go(Page.Settings));
+
+    /// <summary>The voices of the people you talk to, 0 to 200 percent. Takes effect at once and is remembered.</summary>
+    public double VoiceVolume
+    {
+        get => _host.Settings.VoiceVolume * 100;
+        set
+        {
+            _host.Settings.VoiceVolume = value / 100;
+            _host.Audio.Volume = (float)(value / 100);
+            _volumeDirty = true;
+            Raise();
+        }
+    }
+
+    private bool _volumeDirty;
 
     public ICommand Answer => new RelayCommand(_host.Answer);
     public ICommand Decline => new RelayCommand(_host.Decline);

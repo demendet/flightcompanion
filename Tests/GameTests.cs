@@ -387,6 +387,27 @@ public class CareerTests
     }
 }
 
+public class TemperTests
+{
+    [Fact]
+    public void Most_people_are_calm_and_some_have_a_short_fuse()
+    {
+        var all = Enumerable.Range(0, 1000).Select(i => CastFactory.Create(new Random(i)).Temper).ToList();
+        int calm = all.Count(t => t <= 0.4), angry = all.Count(t => t > 0.7);
+        Assert.True(calm > 450, $"calm {calm}");
+        Assert.InRange(angry, 80, 300);
+    }
+
+    [Fact]
+    public void An_angry_person_is_told_to_act_like_it()
+    {
+        var c = new CareerState();
+        Assert.Contains("short fuse", Prompts.Speaker(new Person { Name = "A", Temper = 0.9 }, null, c, TalkMode.Phone, null, "no"));
+        Assert.Contains("easy going", Prompts.Speaker(new Person { Name = "B", Temper = 0.1 }, null, c, TalkMode.Phone, null, "no"));
+        Assert.Contains("not like customer service", Prompts.Speaker(new Person { Name = "B" }, null, c, TalkMode.Phone, null, "no"));
+    }
+}
+
 public class PriceTests
 {
     private static readonly DateTimeOffset Now = new(2026, 11, 6, 12, 0, 0, TimeSpan.FromHours(1));

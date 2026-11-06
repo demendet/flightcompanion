@@ -37,6 +37,7 @@ public static class L
         ["The phone will ring when someone needs a flight"] = "Telefonen ringer når noen trenger en tur",
         ["Add your keys in Settings to get calls"] = "Legg inn nøklene i innstillingene for å få samtaler",
         ["{0}, knows {1}"] = "{0}, kjenner {1}",
+        ["Their voice"] = "Stemmevolum",
         ["Answer"] = "Svar", ["Decline"] = "Avvis", ["Hang up"] = "Legg på", ["Stop talking"] = "Slutt å snakke",
         ["Look for work"] = "Se etter oppdrag", ["Test my mic"] = "Test mikrofonen", ["Stop the mic test"] = "Stopp mikrofontesten",
         ["Mic test"] = "Mikrofontest", ["Say something. Your words should appear here."] = "Si noe. Ordene dine skal dukke opp her.",

@@ -25,6 +25,8 @@ public sealed class Person
     public double Chatty { get; set; } = 0.5;
     /// <summary>0 lies about everything, 1 scrupulously truthful about weights and plans.</summary>
     public double Honesty { get; set; } = 0.7;
+    /// <summary>0 nothing bothers them, 1 short fuse. Most people are easy going, a few are not.</summary>
+    public double Temper { get; set; } = 0.25;
     /// <summary>How easily they part with money, 0 to 1.</summary>
     public double Wealth { get; set; } = 0.5;
     /// <summary>-100 hates you, 100 trusts you with their life.</summary>
@@ -41,6 +43,12 @@ public sealed class Person
         var sb = new System.Text.StringBuilder();
         sb.Append($"{Name}, {Age}, {(Home.Length > 0 ? "from " + Home : Nationality)}, {Job}. {Personality}");
         if (!string.IsNullOrEmpty(SpeechStyle)) sb.Append($" How you talk: {SpeechStyle}");
+        sb.Append(Temper switch
+        {
+            > 0.7 => " You have a short fuse: waiting, high prices or being told no make you properly annoyed, you snap, you swear a bit, and you say what you think. You calm down if the pilot is straight with you.",
+            > 0.4 => " You are a bit impatient and grumpy, and it shows when something is not going your way.",
+            _ => " You are easy going, and it takes a lot to annoy you.",
+        });
         sb.Append(Fear switch { > 0.7 => " You are frightened of small planes.", > 0.4 => " Small planes make you a bit nervous.", _ => " Flying does not bother you." });
         return sb.ToString();
     }
@@ -111,6 +119,7 @@ public static class CastFactory
             Age = 24 + rng.Next(50),
             Job = t.job, Personality = t.personality, SpeechStyle = o.Speech,
             WeightKg = Math.Round(mean + Gauss(rng) * 12),
+            Temper = Math.Pow(rng.NextDouble(), 1.8),
             Fear = Math.Clamp(t.fear + (rng.NextDouble() - 0.5) * 0.3, 0, 1),
             Chatty = Math.Clamp(t.chatty + (rng.NextDouble() - 0.5) * 0.3, 0, 1),
             Honesty = Math.Clamp(t.honesty + (rng.NextDouble() - 0.5) * 0.3, 0, 1),
@@ -137,7 +146,7 @@ public static class CastFactory
         if (p.Language == "no" || p.FlightsWithYou > 0 || p.ArcId is not null) return;
         var n = Create(rng);
         p.Name = n.Name; p.Nationality = n.Nationality; p.Home = n.Home; p.Language = n.Language; p.SpeaksNorwegian = n.SpeaksNorwegian;
-        p.Gender = n.Gender; p.SpeechStyle = n.SpeechStyle; p.Job = n.Job; p.Personality = n.Personality; p.VoiceId = null;
+        p.Temper = n.Temper; p.Gender = n.Gender; p.SpeechStyle = n.SpeechStyle; p.Job = n.Job; p.Personality = n.Personality; p.VoiceId = null;
     }
 
     private static double Gauss(Random r)
