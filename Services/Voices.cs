@@ -109,8 +109,10 @@ public sealed class ElevenLabs(KeyStore keys, AppSettings settings) : IVoiceStre
                 foreach (var x in doc.RootElement.GetProperty("voices").EnumerateArray())
                 {
                     string accent = x.TryGetProperty("accent", out var ac) ? ac.GetString() ?? "" : "";
-                    // The filter also returns foreign voices that can read Norwegian. Only people who actually sound Norwegian count.
-                    if (!Spoken.Any(k => accent.Contains(k, StringComparison.OrdinalIgnoreCase))) continue;
+                    // The filter also returns foreign voices that can read Norwegian, and "northern" alone can mean northern Vietnam.
+                    // Only a voice whose own language is Norwegian counts.
+                    string own = x.TryGetProperty("language", out var la) ? la.GetString() ?? "" : "";
+                    if (own is not ("no" or "nb" or "nn") || !Spoken.Any(k => accent.Contains(k, StringComparison.OrdinalIgnoreCase))) continue;
                     found.Add((x.GetProperty("public_owner_id").GetString() ?? "", x.GetProperty("voice_id").GetString() ?? "", x.GetProperty("name").GetString() ?? "", accent,
                         x.TryGetProperty("description", out var d) ? d.GetString() ?? "" : ""));
                 }
@@ -138,6 +140,14 @@ public sealed class ElevenLabs(KeyStore keys, AppSettings settings) : IVoiceStre
             }
         }
         return added;
+    }
+
+    public async Task RemoveVoiceAsync(string voiceId, CancellationToken ct)
+    {
+        using var req = new HttpRequestMessage(HttpMethod.Delete, $"v1/voices/{voiceId}");
+        req.Headers.Add("xi-api-key", keys.ElevenLabs);
+        using var resp = await Http.SendAsync(req, ct);
+        if (!resp.IsSuccessStatusCode) throw new VoiceException(resp.StatusCode, $"ElevenLabs {(int)resp.StatusCode}");
     }
 
     public async Task<List<VoiceInfo>> ListVoicesAsync(CancellationToken ct)
@@ -179,11 +189,15 @@ public sealed class VoiceCaster
     /// <summary>The plan does not allow this voice: it will not be cast again.</summary>
     public void Ban(string voiceId) => _banned.Add(voiceId);
 
+    /// <summary>A voice's own language decides. The accent label alone is not enough: "northern" also means northern Vietnam.</summary>
+    private static bool IsNorwegian(VoiceInfo v) => v.Language.Length > 0
+        ? v.Language is "no" or "nb" or "nn"
+        : NorwegianAccents.Any(a => a != "northern" && v.Accent.Contains(a, StringComparison.OrdinalIgnoreCase));
+
     public string? VoiceFor(Person p, IEnumerable<Person> others)
     {
         var usable = _voices.Where(v => !_banned.Contains(v.Id)).ToList();
-        bool IsNorsk(VoiceInfo v) => v.Language.Equals("no", StringComparison.OrdinalIgnoreCase) || v.Language.Equals("nb", StringComparison.OrdinalIgnoreCase)
-            || NorwegianAccents.Any(a => v.Accent.Contains(a, StringComparison.OrdinalIgnoreCase));
+        bool IsNorsk(VoiceInfo v) => IsNorwegian(v);
         if (p.VoiceId is not null && !_banned.Contains(p.VoiceId))
         {
             // Someone Norwegian who was given a foreign voice gets a Norwegian one as soon as the account has any.
@@ -197,13 +211,13 @@ public sealed class VoiceCaster
         string want = p.Nationality switch { "American" => "american", "British" => "british", "German" => "german", "Italian" => "italian", "Japanese" => "japanese", "Norwegian" or "Sami" => "norwegian", "Finnish" => "finnish", "Dutch" => "dutch", _ => "" };
         var accent = want.Length > 0 ? same.Where(v => v.Accent.Contains(want, StringComparison.OrdinalIgnoreCase)).ToList() : [];
         // A voice labelled Norwegian beats everything for someone who speaks it. The northern ones win for people from up north.
-        var norsk = same.Where(v => v.Language.Equals("no", StringComparison.OrdinalIgnoreCase) || v.Language.Equals("nb", StringComparison.OrdinalIgnoreCase)
-            || NorwegianAccents.Any(a => v.Accent.Contains(a, StringComparison.OrdinalIgnoreCase))).ToList();
+        var norsk = same.Where(IsNorwegian).ToList();
         var north = norsk.Where(v => NorthernAccents.Any(a => v.Accent.Contains(a, StringComparison.OrdinalIgnoreCase) || v.Name.Contains(a, StringComparison.OrdinalIgnoreCase))).ToList();
         var oslo = norsk.Where(v => v.Accent.Contains("oslo", StringComparison.OrdinalIgnoreCase)).ToList();
         var pool = p.Language != "no" ? (accent.Count > 0 ? accent : same)
             : p.Home == "Oslo" && oslo.Count > 0 ? oslo
             : p.Home != "Oslo" && north.Count > 0 ? north
+            : p.Home != "Oslo" && norsk.Any(v => !v.Accent.Contains("oslo", StringComparison.OrdinalIgnoreCase)) ? norsk.Where(v => !v.Accent.Contains("oslo", StringComparison.OrdinalIgnoreCase)).ToList()
             : norsk.Count > 0 ? norsk : same;
         var taken = others.Select(o => o.VoiceId).Where(id => id is not null).ToHashSet();
         var free = pool.Where(v => !taken.Contains(v.Id)).ToList();
