@@ -61,6 +61,21 @@ internal static class SelfTest
         await Say("cruise, nonsense from speech recognition", cruise, "Og så, og så, rislinga.");
         await Say("cruise, destination", cruise, "Vi skal til Lakselv.");
         await Say("over the threshold", final, "Da lander vi.");
+        var hege = new Game.People.Person { Name = "Hege Lund", Language = "no", SpeaksNorwegian = true, Home = "Finnmark", Trust = -50 };
+        hege.Note(now.AddDays(-1), "Piloten kom med en seksuell kommentar.", -45, true);
+        var career = new Game.Career.CareerState();
+        career.Talks.Add(new Game.Career.TalkRecord { When = now.AddDays(-1), Mode = "Phone", PersonIds = [hege.Id], Offence = 2, HungUp = true, Lines = ["Captain: Du får gratis tur hvis jeg får knulle deg.", "Hege Lund: Hva faen? Nei. Dette forteller jeg folk."] });
+        var job = new Game.Missions.Mission { CallerId = hege.Id, Title = "Tur", Premise = "You need to get to Lakselv. You want to go right now.", Phase = Game.Missions.MissionPhase.Negotiating, Plan = new Game.Missions.MissionPlan { PickupId = "ENMP", DropoffId = "ENNA" } };
+        string wronged = Game.Talk.Prompts.Speaker(hege, job, career, Game.Talk.TalkMode.Phone, null, "no", Game.Talk.Dialect.Unknown);
+        for (int i = 0; i < 3; i++)
+        {
+            var first = new System.Text.StringBuilder();
+            await foreach (var d in brain.SpeakAsync(wronged, [new Turn(true, "[The pilot just picked up the phone. Say hello.]")], ct)) first.Append(d);
+            var second = new System.Text.StringBuilder();
+            await foreach (var d in brain.SpeakAsync(wronged, [new Turn(true, "[The pilot just picked up the phone. Say hello.]"), new Turn(false, first.ToString()), new Turn(true, "Ja, det kan vi gjøre. Når da?")], ct)) second.Append(d);
+            report.Add($"WRONGED opens: {first}");
+            report.Add($"WRONGED after yes, when: {second}");
+        }
         File.WriteAllLines(Path.Combine(outDir, "talk.txt"), report);
     }
 

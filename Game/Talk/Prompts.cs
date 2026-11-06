@@ -85,7 +85,15 @@ public static class Prompts
             }
             sb.AppendLine("Bring it up when it matters, and refer to the actual things that were said. If the pilot insulted or harassed you, you have not forgotten: say so right away, and you can throw their exact words back at them.");
         }
-        if (who.Trust < -30)
+        bool wronged = who.Trust < -30 || who.Record.Any(r => r.Serious)
+            || c.Talks.Any(t => t.Offence > 0 && t.PersonIds.Contains(who.Id) && (who.ForgottenAt is null || t.When > who.ForgottenAt));
+        bool pilotRang = reason?.StartsWith("The pilot is calling you", StringComparison.Ordinal) == true;
+        if (wronged && mode == TalkMode.Phone && !pilotRang && m is not null)
+            sb.AppendLine($"""
+                YOU CALLED THIS PILOT YOURSELF, ON PURPOSE. You know exactly who they are and exactly what they said to you, and you swore you would not deal with them again. It costs you to make this call. You are making it because {WhyCallAnyway(m.Id)}
+                So you are never surprised that it is them, you never act as if you just found out who you are talking to, and you never say you will not fly with them, because you rang them for this flight and you still need it. Say early on, coldly and in your own words, that you remember what they said and that you are only calling because you have no choice. Then keep it strictly about the flight, with no small talk. If they do it again, or keep insulting you, then you are done: hang up.
+                """);
+        else if (wronged)
             sb.AppendLine("You have not forgiven this pilot. You are cold or furious from the first word, and you owe them nothing. You may refuse to deal with them and hang up.");
 
         sb.AppendLine();
@@ -144,6 +152,20 @@ public static class Prompts
             _ => "THE SCENE: you have just landed. You are getting out of the aircraft and saying goodbye to the pilot. Mention how the flight felt to you. Settle anything still open, and if it is natural, agree on when they come back for you, normally a few hours from now, today.",
         });
         return sb.ToString();
+    }
+
+    /// <summary>Why someone you wronged still rings you. Stays the same for one job.</summary>
+    private static string WhyCallAnyway(string missionId)
+    {
+        string[] reasons =
+        [
+            "nobody else flies out here, and you have tried everyone.",
+            "the other pilot is grounded this week, and you cannot wait.",
+            "the road is closed, and this cannot wait for it to open.",
+            "you have someone depending on you, and that matters more than your pride right now.",
+            "no other aircraft can land where you need to go.",
+        ];
+        return reasons[missionId.Sum(ch => ch) % reasons.Length];
     }
 
     private const string SamiSpeech = """

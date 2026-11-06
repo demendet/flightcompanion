@@ -481,6 +481,24 @@ public class TalkMemoryTests
     }
 
     [Fact]
+    public void Someone_you_wronged_who_rings_you_knows_they_rang_you()
+    {
+        var p = new Person { Name = "A B", Language = "no" };
+        var c = new CareerState();
+        c.People.Add(p);
+        c.Talks.Add(new TalkRecord { When = DateTimeOffset.Now.AddHours(-1), PersonIds = [p.Id], Offence = 1, Lines = ["Matt: x"] });
+        var job = new Mission { CallerId = p.Id, Plan = new MissionPlan { PickupId = "ENMP", DropoffId = "ENNA" } };
+        string theyRang = Prompts.Speaker(p, job, c, TalkMode.Phone, null, "no");
+        Assert.Contains("YOU CALLED THIS PILOT YOURSELF", theyRang);
+        Assert.Contains("never say you will not fly with them", theyRang);
+        string pilotRang = Prompts.Speaker(p, job, c, TalkMode.Phone, "The pilot is calling you about this flight.", "no");
+        Assert.DoesNotContain("YOU CALLED THIS PILOT YOURSELF", pilotRang);
+        Assert.Contains("may refuse to deal with them", pilotRang);
+        string clean = Prompts.Speaker(new Person { Name = "C D", Language = "no" }, job, new CareerState(), TalkMode.Phone, null, "no");
+        Assert.DoesNotContain("YOU CALLED THIS PILOT YOURSELF", clean);
+    }
+
+    [Fact]
     public void Someone_you_wronged_starts_the_call_furious()
     {
         var p = new Person { Name = "A B", Language = "no", Trust = -50 };
