@@ -141,6 +141,23 @@ public sealed class GameHost : IDisposable
         _chat.AddRange(chat);
     }
 
+    /// <summary>The player's own clone belongs to one person, who then keeps calling. A northern local fits the accent it was made with.</summary>
+    private void GiveCloneAPerson()
+    {
+        if (Caster.ClonedVoiceId is not { } clone) return;
+        var who = Career.People.FirstOrDefault(p => p.VoiceId == clone);
+        if (who is null)
+        {
+            who = CastFactory.Create(_rng, "Norwegian", null, "Finnmark");
+            who.Gender = "male";
+            who.Name = (new[] { "Odd", "Terje", "Roger", "Kjell", "Arne", "Svein", "Ronny" })[_rng.Next(7)] + " " + who.Name.Split(' ')[^1];
+            who.VoiceId = clone;
+            Career.People.Add(who);
+            Log.Info("Voice", $"{who.Name} now speaks with the cloned voice");
+        }
+        Career.FavoriteCallerId = who.Id;
+    }
+
     private void RenameForeignStrangers()
     {
         foreach (var p in Career.People) CastFactory.MakeLocal(p, _rng);
@@ -181,7 +198,7 @@ public sealed class GameHost : IDisposable
             try
             {
                 await Caster.RefreshAsync(_stop.Token);
-                Post(() => { VoiceHealth = new Health(HealthLevel.Good, L.F("{0} voices available", Caster.Count)); Changed?.Invoke(); });
+                Post(() => { GiveCloneAPerson(); VoiceHealth = new Health(HealthLevel.Good, L.F("{0} voices available", Caster.Count)); Changed?.Invoke(); });
             }
             catch (VoiceException ex)
             {

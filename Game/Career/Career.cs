@@ -36,6 +36,8 @@ public sealed class CareerState
     public Dictionary<string, double> FuelCache { get; set; } = new() { ["ENMP"] = 20 };
     public Dictionary<string, int> ArcProgress { get; set; } = [];
     public Dictionary<string, DateTimeOffset> ArcNextAt { get; set; } = [];
+    /// <summary>The person who speaks with the player's own cloned voice. They call a little more often than anyone else.</summary>
+    public string? FavoriteCallerId { get; set; }
     public DateTimeOffset? NextCallAt { get; set; }
     public DateTimeOffset? LastLoanPayment { get; set; }
     public double? LastLat { get; set; }
@@ -68,8 +70,17 @@ public sealed class CareerView(CareerState state) : CareerStateView
     public override double? CurrentLat => state.LastLat;
     public override double? CurrentLon => state.LastLon;
 
+    /// <summary>A bit over one new job in six comes from the favorite, as long as they still talk to you and are not already booked.</summary>
+    public const double FavoriteChance = 0.18;
+
     public override Person PickCaller(MissionTemplate tpl, Random rng)
     {
+        if (state.PersonById(state.FavoriteCallerId) is { Trust: > -40 } favorite
+            && tpl.CallerNationality is null or "Sami" or "Norwegian"
+            && !state.Missions.Any(m => m.CallerId == favorite.Id && (m.IsOpen || m.Phase is MissionPhase.Ringing or MissionPhase.Negotiating))
+            && rng.NextDouble() < FavoriteChance)
+            return favorite;
+
         // Regulars come back. The better your name, the more of your work comes from people you already know.
         double regularChance = Math.Clamp(0.15 + state.Reputation / 180.0, 0.1, 0.65);
         var regulars = state.People.Where(p => p.FlightsWithYou > 0 && p.Trust > -25 && p.ArcId is null

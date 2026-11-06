@@ -215,6 +215,9 @@ public sealed class VoiceCaster
 
     public async Task RefreshAsync(CancellationToken ct) => _voices = await _api.ListVoicesAsync(ct);
 
+    /// <summary>The account's own cloned voice, if it has one.</summary>
+    public string? ClonedVoiceId => _voices.FirstOrDefault(v => v.Category == "cloned" && !_banned.Contains(v.Id))?.Id;
+
     public string AccentOf(string voiceId) => _voices.FirstOrDefault(v => v.Id == voiceId)?.Accent ?? "";
 
     /// <summary>The plan does not allow this voice: it will not be cast again.</summary>

@@ -387,6 +387,35 @@ public class CareerTests
     }
 }
 
+public class FavoriteCallerTests
+{
+    private static int HowOften(Action<CareerState, Person>? setup = null)
+    {
+        int count = 0;
+        var tpl = MissionCatalog.ById("lodge_weekend")!;
+        for (int i = 0; i < 1000; i++)
+        {
+            var c = new CareerState();
+            var fav = new Person { Name = "Odd Nilsen", Language = "no" };
+            c.People.Add(fav);
+            c.FavoriteCallerId = fav.Id;
+            setup?.Invoke(c, fav);
+            if (new CareerView(c).PickCaller(tpl, new Random(i)) == fav) count++;
+        }
+        return count;
+    }
+
+    [Fact]
+    public void The_clone_calls_a_bit_more_often_but_not_all_the_time() => Assert.InRange(HowOften(), 130, 230);
+
+    [Fact]
+    public void Not_while_already_booked()
+        => Assert.Equal(0, HowOften((c, fav) => c.Missions.Add(new Mission { CallerId = fav.Id, Phase = MissionPhase.Booked })));
+
+    [Fact]
+    public void Not_after_falling_out_with_you() => Assert.Equal(0, HowOften((_, fav) => fav.Trust = -60));
+}
+
 public class CancelTests
 {
     private static readonly DateTimeOffset Now = new(2026, 11, 6, 12, 0, 0, TimeSpan.FromHours(1));
