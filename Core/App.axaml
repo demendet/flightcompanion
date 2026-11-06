@@ -1,0 +1,154 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="FlightCompanion.App"
+             RequestedThemeVariant="Dark">
+
+    <Application.Styles>
+        <FluentTheme>
+            <FluentTheme.Palettes>
+                <ColorPaletteResources x:Key="Dark"
+                                       Accent="#FF22D3EE"
+                                       AltHigh="#FF0B0E14"
+                                       AltLow="#FF10151F"
+                                       AltMedium="#FF151B26"
+                                       AltMediumHigh="#FF1A2130"
+                                       AltMediumLow="#FF12171F"
+                                       BaseHigh="#FFF1F5F9"
+                                       BaseLow="#FF64748B"
+                                       BaseMedium="#FF94A3B8"
+                                       BaseMediumHigh="#FFCBD5E1"
+                                       BaseMediumLow="#FF7C8BA0"
+                                       ChromeAltLow="#FFCBD5E1"
+                                       ChromeBlackHigh="#FF000000"
+                                       ChromeBlackLow="#FFCBD5E1"
+                                       ChromeBlackMedium="#FF000000"
+                                       ChromeBlackMediumLow="#FF000000"
+                                       ChromeDisabledHigh="#FF2A3342"
+                                       ChromeDisabledLow="#FF1A2130"
+                                       ChromeGray="#FF64748B"
+                                       ChromeHigh="#FF64748B"
+                                       ChromeLow="#FF0E1420"
+                                       ChromeMedium="#FF12171F"
+                                       ChromeMediumLow="#FF151B26"
+                                       ChromeWhite="#FFF1F5F9"
+                                       ListLow="#FF151B26"
+                                       ListMedium="#FF1A2130"
+                                       RegionColor="#FF0B0E14"/>
+            </FluentTheme.Palettes>
+        </FluentTheme>
+
+        <!-- ==================== Modern control styles ==================== -->
+
+        <!-- Section headings -->
+        <Style Selector="TextBlock.h1">
+            <Setter Property="FontSize" Value="15" />
+            <Setter Property="FontWeight" Value="Bold" />
+            <Setter Property="Foreground" Value="{StaticResource TextPrimary}" />
+        </Style>
+        <Style Selector="TextBlock.overline">
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="FontWeight" Value="Bold" />
+            <Setter Property="Foreground" Value="{StaticResource Accent}" />
+            <Setter Property="LetterSpacing" Value="1.5" />
+        </Style>
+        <Style Selector="TextBlock.muted">
+            <Setter Property="Foreground" Value="{StaticResource TextMuted}" />
+            <Setter Property="FontSize" Value="12" />
+        </Style>
+
+        <!-- Card container -->
+        <Style Selector="Border.card">
+            <Setter Property="Background" Value="{StaticResource Surface}" />
+            <Setter Property="BorderBrush" Value="{StaticResource StrokeSoft}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="12" />
+            <Setter Property="Padding" Value="16" />
+        </Style>
+
+        <!-- Buttons: rounded, padded, animated -->
+        <Style Selector="Button">
+            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="Padding" Value="14,9" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="HorizontalContentAlignment" Value="Center" />
+            <Setter Property="Transitions">
+                <Transitions>
+                    <BrushTransition Property="Background" Duration="0:0:0.15" />
+                    <TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.10" />
+                </Transitions>
+            </Setter>
+        </Style>
+        <Style Selector="Button:pointerover /template/ ContentPresenter">
+            <Setter Property="Background" Value="{TemplateBinding Background}" />
+        </Style>
+        <Style Selector="Button:pressed">
+            <Setter Property="RenderTransform" Value="scale(0.97)" />
+        </Style>
+
+        <!-- Accent (primary) button -->
+        <Style Selector="Button.accent">
+            <Setter Property="Background" Value="{StaticResource AccentGradient}" />
+            <Setter Property="Foreground" Value="#FF06222B" />
+        </Style>
+        <Style Selector="Button.success">
+            <Setter Property="Background" Value="{StaticResource SuccessGreen}" />
+            <Setter Property="Foreground" Value="White" />
+        </Style>
+        <Style Selector="Button.danger">
+            <Setter Property="Background" Value="{StaticResource ErrorRed}" />
+            <Setter Property="Foreground" Value="White" />
+        </Style>
+        <Style Selector="Button.ghost">
+            <Setter Property="Background" Value="#1AFFFFFF" />
+            <Setter Property="Foreground" Value="{StaticResource TextPrimary}" />
+            <Setter Property="BorderBrush" Value="{StaticResource StrokeSoft}" />
+            <Setter Property="BorderThickness" Value="1" />
+        </Style>
+
+        <!-- Inputs -->
+        <Style Selector="TextBox">
+            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="Background" Value="{StaticResource SurfaceInput}" />
+            <Setter Property="BorderBrush" Value="{StaticResource StrokeSoft}" />
+            <Setter Property="Padding" Value="10,8" />
+        </Style>
+
+        <Style Selector="ScrollViewer">
+            <Setter Property="Background" Value="Transparent" />
+        </Style>
+    </Application.Styles>
+
+    <Application.Resources>
+        <!-- ==================== Palette (DualLink-inspired HUD dark) ==================== -->
+        <!-- Backgrounds -->
+        <SolidColorBrush x:Key="AppBg">#FF0B0E14</SolidColorBrush>
+        <SolidColorBrush x:Key="Surface">#FF151B26</SolidColorBrush>
+        <SolidColorBrush x:Key="SurfaceAlt">#FF1A2130</SolidColorBrush>
+        <SolidColorBrush x:Key="SurfaceInput">#FF0E1420</SolidColorBrush>
+        <SolidColorBrush x:Key="StrokeSoft">#FF232C3D</SolidColorBrush>
+
+        <!-- Text -->
+        <SolidColorBrush x:Key="TextPrimary">#FFF1F5F9</SolidColorBrush>
+        <SolidColorBrush x:Key="TextMuted">#FF8B98A9</SolidColorBrush>
+
+        <!-- Accents -->
+        <SolidColorBrush x:Key="Accent">#FF22D3EE</SolidColorBrush>
+        <SolidColorBrush x:Key="AccentDim">#FF0E7490</SolidColorBrush>
+        <LinearGradientBrush x:Key="AccentGradient" StartPoint="0%,0%" EndPoint="100%,100%">
+            <GradientStop Offset="0" Color="#FF38E0F0" />
+            <GradientStop Offset="1" Color="#FF2A9FE6" />
+        </LinearGradientBrush>
+        <LinearGradientBrush x:Key="HeaderGradient" StartPoint="0%,0%" EndPoint="100%,0%">
+            <GradientStop Offset="0" Color="#FF10151F" />
+            <GradientStop Offset="1" Color="#FF141C2B" />
+        </LinearGradientBrush>
+
+        <!-- Legacy keys kept so existing bindings resolve, remapped to the new palette -->
+        <SolidColorBrush x:Key="PrimaryAccent">#FF22D3EE</SolidColorBrush>
+        <SolidColorBrush x:Key="SecondaryAccent">#FF60A5FA</SolidColorBrush>
+        <SolidColorBrush x:Key="SuccessGreen">#FF22C55E</SolidColorBrush>
+        <SolidColorBrush x:Key="WarningOrange">#FFF59E0B</SolidColorBrush>
+        <SolidColorBrush x:Key="ErrorRed">#FFEF4444</SolidColorBrush>
+    </Application.Resources>
+</Application>

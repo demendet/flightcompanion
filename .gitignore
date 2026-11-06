@@ -1,0 +1,8 @@
+bin/
+obj/
+*.user
+*.suo
+.vs/
+# Never commit secrets. Keys live in %APPDATA%\FlightCompanion, this file is only read once to migrate them.
+appsettings.json
+appsettings.*.json

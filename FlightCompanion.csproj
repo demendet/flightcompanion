@@ -1,0 +1,101 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net9.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <Nullable>enable</Nullable>
+    <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
+    <ApplicationManifest>Core\app.manifest</ApplicationManifest>
+    <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+    <Platforms>AnyCPU;x64</Platforms>
+    <PlatformTarget>x64</PlatformTarget>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Avalonia UI Framework -->
+    <PackageReference Include="Avalonia" Version="11.3.0" />
+    <PackageReference Include="Avalonia.Desktop" Version="11.3.0" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="11.3.0" />
+    <PackageReference Include="Avalonia.Fonts.Inter" Version="11.3.0" />
+    <PackageReference Include="Avalonia.Diagnostics" Version="11.3.0">
+      <IncludeAssets Condition="'$(Configuration)' != 'Debug'">None</IncludeAssets>
+      <PrivateAssets Condition="'$(Configuration)' != 'Debug'">All</PrivateAssets>
+    </PackageReference>
+    <!-- SignalR for multiplayer -->
+    <PackageReference Include="Microsoft.AspNetCore.SignalR.Client" Version="8.0.0" />
+    <PackageReference Include="ZstdSharp.Port" Version="0.8.1" />
+    
+    <!-- High-performance collections -->
+    <PackageReference Include="System.Collections.Immutable" Version="8.0.0" />
+    <PackageReference Include="System.Memory" Version="4.5.5" />
+    
+    <!-- JSON support -->
+    <PackageReference Include="System.Text.Json" Version="9.0.0" />
+    
+    <!-- HTTP Client for APIs -->
+    <PackageReference Include="System.Net.Http.Json" Version="8.0.0" />
+    
+    <!-- OpenAI SDK -->
+    <PackageReference Include="Betalgo.OpenAI" Version="8.7.2" />
+    
+    <!-- Audio processing for voice -->
+    <PackageReference Include="NAudio" Version="2.2.1" />
+    
+    <!-- Speech Recognition -->
+    <PackageReference Include="Microsoft.CognitiveServices.Speech" Version="1.34.1" />
+
+    <!-- Local offline speech-to-text (Whisper) — Norwegian + English auto-detect, no API key -->
+    <PackageReference Include="Whisper.net" Version="1.8.1" />
+    <PackageReference Include="Whisper.net.Runtime" Version="1.8.1" />
+    <!-- GPU via Vulkan — uses the graphics driver (no CUDA toolkit); makes large-model STT real-time -->
+    <PackageReference Include="Whisper.net.Runtime.Vulkan" Version="1.8.1" />
+    
+    <!-- Reactive Extensions for event handling -->
+    <PackageReference Include="System.Reactive" Version="6.0.1" />
+    
+    <!-- DI Container -->
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="8.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Logging" Version="8.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="8.0.0" />
+    
+    <!-- Windows Forms for SimConnect message handling -->
+    <FrameworkReference Include="Microsoft.WindowsDesktop.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="Microsoft.FlightSimulator.SimConnect">
+      <HintPath>lib\Microsoft.FlightSimulator.SimConnect.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="SimConnect">
+      <HintPath>lib\SimConnect.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="WASimCommander.WASimClient">
+      <HintPath>lib\WASimCommander.WASimClient.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+  </ItemGroup>
+
+  <!-- Copy native DLLs to output directory -->
+  <ItemGroup>
+    <None Include="lib\*.dll">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+    <None Include="lib\*.ini">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+  <ItemGroup>
+    <AvaloniaResource Include="Assets\*" />
+  </ItemGroup>
+  
+  <!-- Copy configuration files -->
+  <ItemGroup>
+    <None Include="appsettings.json">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+</Project>
