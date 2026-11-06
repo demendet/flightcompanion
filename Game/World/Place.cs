@@ -43,7 +43,7 @@ public static class WorldData
     [
         new()
         {
-            Id = "ENMP", Name = "Mollisjok", Aliases = ["Mollisjok Lodge", "Mollisjokk", "Mollisjohka", "the lodge"],
+            Id = "ENMP", Name = "Mollisjok", Aliases = ["Mollisjok Lodge", "Mollisjokk", "Mollisjohka", "the lodge", "Moloshock", "Molosjok", "Mollisjokk", "Mollishok", "lodgen"],
             Lat = 69.52911, Lon = 24.39231, ElevationFt = 1215, RunwayM = 550, Soft = true, Remote = true,
             MeetLat = 69.52880, MeetLon = 24.38900, MetarStation = "ENNA",
             Brief = "Timber lodge on the Finnmarksvidda, no road in summer, gravel and grass strip beside the river. Red sheds and cabins around it.",

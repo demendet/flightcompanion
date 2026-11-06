@@ -43,7 +43,7 @@ public sealed class Listener : IDisposable, IMMNotificationClient
     private volatile bool _busy;
     private int _framesSincePartial;
     private bool _disposed;
-    private string _prompt = "Finnmark, Karasjok, Mollisjok, Ravnastua, Lakselv, Banak, Alta, Kautokeino, Ivalo, Honningsvåg, bagasje, kilo, kroner, drivstoff, Cessna.";
+    private string _prompt = "Hei, dette er piloten. Vi flyr fra Lakselv til Mollisjok, Ravnastua og Karasjok, over Finnmarksvidda. Bagasje, kilo, kroner, drivstoff, Alta, Banak, Kautokeino, Mollisjok.";
 
     private sealed record WorkItem(float[] Samples, bool Final);
 
@@ -95,6 +95,7 @@ public sealed class Listener : IDisposable, IMMNotificationClient
             }
             _factory = WhisperFactory.FromPath(path);
             _whisperReady = true;
+            _work.Add(new WorkItem(new float[SpeechGate.SampleRate], false));   // warms it up: the first real sentence took 3.4 s without this
             Log.Info("Mic", "Speech recognition ready");
             ReportState();
         }
@@ -224,7 +225,8 @@ public sealed class Listener : IDisposable, IMMNotificationClient
     private static bool IsWhisperNoise(string t)
     {
         string s = t.Trim().Trim('.', '!', ' ').ToLowerInvariant();
-        return s.Length == 0 || s.StartsWith('[') || s.StartsWith('(') || s is "thank you" or "thanks for watching" or "takk for meg" or "takk for at du så på" or "you" || s.StartsWith("teksting");
+        return s.Length == 0 || s.StartsWith('[') || s.StartsWith('(') || s is "thank you" or "thanks for watching" or "takk for meg" or "takk for at du så på" or "you" || s.StartsWith("teksting")
+            || System.Text.RegularExpressions.Regex.IsMatch(s, @"^(u+h+|e+h+|h+m+|m+|a+h+|ø+h*|e+)[\s.,!?]*$");
     }
 
     private async Task<(string text, string lang)> Transcribe(float[] samples)

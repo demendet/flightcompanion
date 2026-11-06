@@ -98,6 +98,8 @@ public sealed class GameHost : IDisposable
         Keys = new KeyStore();
         Career = preview ?? CareerStore.Load(AppPaths.Career);
         _rng = new Random(Career.Seed + Career.RandomCounter++);
+        CastFactory.LocalsOnly = Settings.TalkLanguage == "no";
+        if (CastFactory.LocalsOnly && !_offline) RenameForeignStrangers();
         _director = new Director(Career, _rng);
         _flow = new MissionFlow(Career);
 
@@ -131,6 +133,14 @@ public sealed class GameHost : IDisposable
         Latest = t;
         _ringing = ring;
         _chat.AddRange(chat);
+    }
+
+    private void RenameForeignStrangers()
+    {
+        foreach (var p in Career.People) CastFactory.MakeLocal(p, _rng);
+        foreach (var m in Career.Missions)
+            foreach (var pax in m.Plan.Passengers.Concat(m.Truth.Passengers))
+                if (Career.PersonById(pax.PersonId) is { } who) pax.Name = who.Name;
     }
 
     public void Post(Action a) => _loop.Writer.TryWrite(a);

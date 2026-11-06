@@ -12,7 +12,7 @@ using FlightCompanion.Game.People;
 
 namespace FlightCompanion.Services;
 
-public sealed record VoiceInfo(string Id, string Name, string Gender, string Accent, string Age, string Category);
+public sealed record VoiceInfo(string Id, string Name, string Gender, string Accent, string Age, string Category, string Language = "");
 
 public sealed class VoiceException(HttpStatusCode status, string message) : Exception(message)
 {
@@ -84,7 +84,7 @@ public sealed class ElevenLabs(KeyStore keys) : IVoiceStream
         {
             string L(string key) => v.TryGetProperty("labels", out var l) && l.ValueKind == JsonValueKind.Object && l.TryGetProperty(key, out var x) ? x.GetString() ?? "" : "";
             list.Add(new VoiceInfo(v.GetProperty("voice_id").GetString() ?? "", v.GetProperty("name").GetString() ?? "", L("gender"), L("accent"), L("age"),
-                v.TryGetProperty("category", out var c) ? c.GetString() ?? "" : ""));
+                v.TryGetProperty("category", out var c) ? c.GetString() ?? "" : "", L("language")));
         }
         return list;
     }
@@ -94,6 +94,8 @@ public sealed class ElevenLabs(KeyStore keys) : IVoiceStream
 public sealed class VoiceCaster
 {
     private readonly ElevenLabs _api;
+    private static readonly string[] NorwegianAccents = ["norwegian", "oslo", "bergen", "trondheim", "tromsø", "tromso", "nordnorsk", "northern norw", "finnmark"];
+    private static readonly string[] NorthernAccents = ["tromsø", "tromso", "nordnorsk", "northern norw", "finnmark", "nord-norge"];
     private readonly HashSet<string> _banned = [];
     private List<VoiceInfo> _voices = [];
     private readonly Random _rng = new();
@@ -117,7 +119,11 @@ public sealed class VoiceCaster
         if (same.Count == 0) same = usable;
         string want = p.Nationality switch { "American" => "american", "British" => "british", "German" => "german", "Italian" => "italian", "Japanese" => "japanese", "Norwegian" or "Sami" => "norwegian", "Finnish" => "finnish", "Dutch" => "dutch", _ => "" };
         var accent = want.Length > 0 ? same.Where(v => v.Accent.Contains(want, StringComparison.OrdinalIgnoreCase)).ToList() : [];
-        var pool = accent.Count > 0 ? accent : same;
+        // A voice labelled Norwegian beats everything for someone who speaks it. The northern ones win for people from up north.
+        var norsk = same.Where(v => v.Language.Equals("no", StringComparison.OrdinalIgnoreCase) || v.Language.Equals("nb", StringComparison.OrdinalIgnoreCase)
+            || NorwegianAccents.Any(a => v.Accent.Contains(a, StringComparison.OrdinalIgnoreCase))).ToList();
+        var north = norsk.Where(v => NorthernAccents.Any(a => v.Accent.Contains(a, StringComparison.OrdinalIgnoreCase) || v.Name.Contains(a, StringComparison.OrdinalIgnoreCase))).ToList();
+        var pool = p.Language == "no" && p.Home != "Oslo" && north.Count > 0 ? north : p.Language == "no" && norsk.Count > 0 ? norsk : accent.Count > 0 ? accent : same;
         var taken = others.Select(o => o.VoiceId).Where(id => id is not null).ToHashSet();
         var free = pool.Where(v => !taken.Contains(v.Id)).ToList();
         var pick = (free.Count > 0 ? free : pool)[_rng.Next((free.Count > 0 ? free : pool).Count)];

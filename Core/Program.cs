@@ -13,6 +13,13 @@ internal static class Program
             Views.LayoutPreview.Run(args[1]);
             return;
         }
+        if (args.Length == 1 && args[0] == "--store-claude-key")
+        {
+            // Reads the key from the environment, so it never appears in a command line or a log.
+            string? key = Environment.GetEnvironmentVariable("FC_CLAUDE_KEY");
+            if (!string.IsNullOrWhiteSpace(key)) new Services.KeyStore().Anthropic = key;
+            return;
+        }
         if (args.Length == 2 && args[0] == "--selftest")
         {
             AttachConsole(-1);

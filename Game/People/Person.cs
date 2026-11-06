@@ -8,6 +8,8 @@ public sealed class Person
     public string Id { get; set; } = Guid.NewGuid().ToString("N")[..10];
     public string Name { get; set; } = "";
     public string Nationality { get; set; } = "";
+    /// <summary>Where they are from, which decides their name and how they talk.</summary>
+    public string Home { get; set; } = "";
     /// <summary>"en" or "no": what they speak first.</summary>
     public string Language { get; set; } = "en";
     public bool SpeaksNorwegian { get; set; }
@@ -37,7 +39,7 @@ public sealed class Person
     public string DescribeForPrompt()
     {
         var sb = new System.Text.StringBuilder();
-        sb.Append($"{Name}, {Age}, {Nationality}, {Job}. {Personality}");
+        sb.Append($"{Name}, {Age}, {(Home.Length > 0 ? "from " + Home : Nationality)}, {Job}. {Personality}");
         if (!string.IsNullOrEmpty(SpeechStyle)) sb.Append($" How you talk: {SpeechStyle}");
         sb.Append(Fear switch { > 0.7 => " You are frightened of small planes.", > 0.4 => " Small planes make you a bit nervous.", _ => " Flying does not bother you." });
         return sb.ToString();
@@ -46,7 +48,12 @@ public sealed class Person
 
 public static class CastFactory
 {
-    private sealed record Origin(string Nationality, string Lang, bool Norwegian, string[] Male, string[] Female, string[] Surnames, string Speech);
+    private sealed record Origin(string Nationality, string Lang, bool Norwegian, string[] Male, string[] Female, string[] Surnames, string Speech, string Home = "");
+
+    /// <summary>True when everyone in the game speaks Norwegian: then the people are from Norway too, not Japanese tourists speaking Norwegian.</summary>
+    public static bool LocalsOnly { get; set; }
+
+    private static readonly string[] NoFromOslo = ["local reindeer herder", "village nurse"];
 
     private static readonly Origin[] Origins =
     [
@@ -57,8 +64,9 @@ public static class CastFactory
         new("Italian", "en", false, ["Marco", "Giorgio", "Luca"], ["Giulia", "Francesca"], ["Rossi", "Conti", "Moretti"], "Warm, expressive English with a strong rhythm, complains about the cold."),
         new("Japanese", "en", false, ["Kenji", "Hiroshi"], ["Yuki", "Aiko"], ["Tanaka", "Sato", "Mori"], "Very polite, short careful sentences, photographs everything."),
         new("Finnish", "en", false, ["Jari", "Pekka", "Mikko"], ["Aino", "Tuula"], ["Korhonen", "Virtanen", "Mäkelä"], "Very few words, long pauses, dry as a bone."),
-        new("Norwegian", "no", true, ["Odd", "Terje", "Geir", "Rune", "Kjell", "Stian"], ["Kari", "Silje", "Marit", "Hege", "Tone"], ["Nilsen", "Johansen", "Berg", "Pedersen", "Lund"], "Plain Norwegian bokmål with the odd northern swear word, relaxed."),
-        new("Sami", "no", true, ["Aslak", "Nils", "Johan", "Mikkel", "Ánte"], ["Ellen", "Inga", "Risten", "Elle"], ["Somby", "Hætta", "Eira", "Sara", "Utsi", "Guttorm"], "Calm northern Norwegian, knows the land far better than you, few words, sly humour."),
+        new("Norwegian", "no", true, ["Anders", "Henrik", "Erik", "Magnus", "Kristian", "Thomas", "Jonas", "Lars", "Martin", "Fredrik"], ["Ingrid", "Kristin", "Camilla", "Silje", "Ida", "Nora", "Hanne", "Maria", "Line"], ["Hansen", "Johansen", "Olsen", "Larsen", "Andersen", "Berg", "Haugen", "Bakken", "Lie", "Moe"], "Oslo speech, urban East Norwegian, says liksom and ikke sant. Excited to be this far north, a bit out of place, thinks everything here is exotic.", "Oslo"),
+        new("Norwegian", "no", true, ["Odd", "Terje", "Roger", "Kjell", "Arne", "Svein", "Ronny", "Geir", "Rune", "Stian"], ["Marit", "Hege", "Tone", "Anne-Lise", "Gunn", "Kari", "Bente", "Torill"], ["Mathisen", "Nilsen", "Pedersen", "Isaksen", "Karlsen", "Henriksen", "Mikkelsen", "Hansen", "Johansen", "Jakobsen"], "Finnmark dialect. Say æ instead of jeg, ka instead of hva, kor instead of hvor, kem instead of hvem, and ikke sant. Relaxed, blunt and funny, swears casually the way people do up north.", "Finnmark"),
+        new("Sami", "no", true, ["Aslak", "Nils", "Johan", "Mikkel", "Ánte", "Per", "Isak", "Mathis", "Jon"], ["Ellen", "Inga", "Risten", "Elle", "Berit", "Sara", "Máret"], ["Somby", "Hætta", "Eira", "Sara", "Utsi", "Guttorm", "Bær", "Balto", "Gaup", "Anti", "Turi", "Buljo"], "Calm northern Norwegian. Say æ instead of jeg and ka instead of hva. Knows the land far better than you, few words, sly humour, and a Sami word like bures for hello now and then.", "Sápmi"),
     ];
 
     private static readonly (string job, string personality, double fear, double chatty, double honesty, double wealth)[] Types =
@@ -79,20 +87,26 @@ public static class CastFactory
         ("retired fighter pilot", "Backseat flies you, tells stories, watches your every move.", 0.0, 0.7, 0.8, 0.6),
     ];
 
-    public static Person Create(Random rng, string? nationality = null, string? job = null)
+    public static Person Create(Random rng, string? nationality = null, string? job = null, string? home = null)
     {
-        var o = nationality is null
-            ? Origins[rng.Next(Origins.Length)]
-            : Origins.FirstOrDefault(x => x.Nationality.Equals(nationality, StringComparison.OrdinalIgnoreCase)) ?? Origins[0];
+        var pool = nationality is not null
+            ? Origins.Where(x => x.Nationality.Equals(nationality, StringComparison.OrdinalIgnoreCase)).ToArray()
+            : LocalsOnly ? Origins.Where(x => x.Lang == "no").ToArray() : Origins;
+        if (home is not null && pool.Any(x => x.Home == home)) pool = pool.Where(x => x.Home == home).ToArray();
+        var o = pool.Length > 0 ? pool[rng.Next(pool.Length)] : Origins[0];
         bool male = rng.NextDouble() < 0.55;
-        var t = job is null ? Types[rng.Next(Types.Length)] : Types.FirstOrDefault(x => x.job.Contains(job, StringComparison.OrdinalIgnoreCase));
-        if (t == default) t = Types[rng.Next(Types.Length)];
+        var t = job is null ? default : Types.FirstOrDefault(x => x.job.Contains(job, StringComparison.OrdinalIgnoreCase));
+        if (t == default)
+        {
+            var fits = Types.Where(x => o.Home != "Oslo" || !NoFromOslo.Contains(x.job)).ToArray();
+            t = fits[rng.Next(fits.Length)];
+        }
         string first = male ? o.Male[rng.Next(o.Male.Length)] : o.Female[rng.Next(o.Female.Length)];
         double mean = male ? 86 : 70;
         return new Person
         {
             Name = $"{first} {o.Surnames[rng.Next(o.Surnames.Length)]}",
-            Nationality = o.Nationality, Language = o.Lang, SpeaksNorwegian = o.Norwegian,
+            Nationality = o.Nationality, Home = o.Home, Language = o.Lang, SpeaksNorwegian = o.Norwegian,
             Gender = male ? "male" : "female",
             Age = 24 + rng.Next(50),
             Job = t.job, Personality = t.personality, SpeechStyle = o.Speech,
@@ -107,11 +121,23 @@ public static class CastFactory
     /// <summary>A travel companion, same origin, independent in everything else.</summary>
     public static Person Companion(Random rng, Person lead)
     {
-        var p = Create(rng, lead.Nationality);
+        var p = Create(rng, lead.Nationality.Length > 0 ? lead.Nationality : null, null, lead.Home.Length > 0 ? lead.Home : null);
         var surname = lead.Name.Contains(' ') ? lead.Name[(lead.Name.IndexOf(' ') + 1)..] : "";
         if (rng.NextDouble() < 0.6 && surname.Length > 0)
             p.Name = p.Name.Split(' ')[0] + " " + surname;
         return p;
+    }
+
+    /// <summary>
+    /// People already created before the names changed, whom you have never flown, become locals. Keeps who they are in the
+    /// game (their id, their bookings), and changes their name, background and voice.
+    /// </summary>
+    public static void MakeLocal(Person p, Random rng)
+    {
+        if (p.Language == "no" || p.FlightsWithYou > 0 || p.ArcId is not null) return;
+        var n = Create(rng);
+        p.Name = n.Name; p.Nationality = n.Nationality; p.Home = n.Home; p.Language = n.Language; p.SpeaksNorwegian = n.SpeaksNorwegian;
+        p.Gender = n.Gender; p.SpeechStyle = n.SpeechStyle; p.Job = n.Job; p.Personality = n.Personality; p.VoiceId = null;
     }
 
     private static double Gauss(Random r)

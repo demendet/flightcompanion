@@ -149,16 +149,16 @@ public static class ArcCatalog
         ]),
         new("salmon_society", "The Salmon Society", () => new Person
         {
-            Name = "Klaus Reinhardt", Nationality = "German", Language = "en", Gender = "male", Age = 71, Job = "retired engineer who has fished here for 40 years",
+            Name = "Arne Mathisen", Nationality = "Norwegian", Home = "Oslo", Language = "no", SpeaksNorwegian = true, Gender = "male", Age = 71, Job = "retired engineer who has fished here for 40 years",
             WeightKg = 94, Fear = 0.1, Chatty = 0.9, Honesty = 0.45, Wealth = 0.8,
             Personality = "Booming, generous, forever underestimating his gear. Part of a group of old friends who come every year.",
-            SpeechStyle = "Heavy German accent, precise about fish and vague about everything else.",
+            SpeechStyle = "Old Oslo gentleman, precise about fish and vague about everything else.",
         },
         [
             new("fishing_camp", "You and your old friends from the salmon society need flying out to the river as you have done for forty years. The old pilot retired, so you are trying this new one.", "The Salmon Society", 0, 0.02, "Your gear is far heavier than you admit. It always is."),
-            new("fishing_camp", "You are back for another trip with your friends. You tell the pilot about the fish that got away last time. Walter, one of your friends, has not been feeling well but insisted on coming.", "The Society returns", 25, 3, "Walter is sicker than he lets on, and you are worried."),
-            new("medevac", "Your friend Walter has collapsed at the camp. You are frightened and you need the pilot to come now. You have known him for 50 years.", "Walter", 30, 2),
-            new("ashes", "Walter has died. He asked for his ashes to go on the river. You ask the pilot, because Walter liked them, to fly you there. You are subdued and grateful and you tell stories about him.", "A last cast for Walter", 30, 4),
+            new("fishing_camp", "You are back for another trip with your friends. You tell the pilot about the fish that got away last time. Terje, one of your friends, has not been feeling well but insisted on coming.", "The Society returns", 25, 3, "Terje is sicker than he lets on, and you are worried."),
+            new("medevac", "Your friend Terje has collapsed at the camp. You are frightened and you need the pilot to come now. You have known him for 50 years.", "Terje", 30, 2),
+            new("ashes", "Terje has died. He asked for his ashes to go on the river. You ask the pilot, because Terje liked them, to fly you there. You are subdued and grateful and you tell stories about him.", "A last cast for Terje", 30, 4),
         ]),
         new("reindeer_doctor", "The reindeer vet", () => new Person
         {

@@ -185,7 +185,7 @@ public static class L
         ["Fuel for the outback"] = "Drivstoff til utmarka", ["District nurse"] = "Distriktssykepleier", ["Medevac: find them"] = "Ambulanse: finn dem", ["Ptarmigan hunters"] = "Rypejegere",
         ["Wedding on the plateau"] = "Bryllup på vidda", ["Finnmarkslopet checkpoint"] = "Sjekkpunkt på Finnmarksløpet", ["Sami Easter festival"] = "Samisk påskefestival", ["A last flight"] = "En siste tur", ["Executive in a hurry"] = "Sjef med dårlig tid",
         ["The lodge needs planks"] = "Lodgen trenger plank", ["More planks for the lodge"] = "Mer plank til lodgen", ["Carpenters for the lodge"] = "Snekkere til lodgen", ["The lodge reopens"] = "Lodgen åpner igjen",
-        ["The Salmon Society"] = "Laksefellesskapet", ["The Society returns"] = "Laksefellesskapet er tilbake", ["Walter"] = "Walter", ["A last cast for Walter"] = "Et siste kast for Walter",
+        ["The Salmon Society"] = "Laksefellesskapet", ["The Society returns"] = "Laksefellesskapet er tilbake", ["Terje"] = "Terje", ["A last cast for Terje"] = "Et siste kast for Terje",
         ["Counting the herds"] = "Telling av flokkene", ["An outbreak on the plateau"] = "Sykdom på vidda", ["Through the ice"] = "Gjennom isen", ["A quiet passenger"] = "En stille passasjer",
         ["{0}: going home"] = "{0}: på vei hjem",
     };

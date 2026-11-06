@@ -387,6 +387,53 @@ public class CareerTests
     }
 }
 
+public class NameTests
+{
+    [Fact]
+    public void In_norwegian_mode_everyone_is_from_oslo_finnmark_or_sapmi()
+    {
+        CastFactory.LocalsOnly = true;
+        try
+        {
+            var homes = new HashSet<string>();
+            for (int i = 0; i < 500; i++)
+            {
+                var p = CastFactory.Create(new Random(i));
+                Assert.Equal("no", p.Language);
+                homes.Add(p.Home);
+                if (p.Home == "Oslo") Assert.DoesNotContain("reindeer herder", p.Job);
+                Assert.Equal(p.Home, CastFactory.Companion(new Random(i + 1), p).Home);
+            }
+            Assert.Equal(["Finnmark", "Oslo", "Sápmi"], homes.OrderBy(h => h));
+        }
+        finally { CastFactory.LocalsOnly = false; }
+    }
+
+    [Fact]
+    public void A_stranger_with_a_foreign_name_becomes_local_but_someone_you_flew_stays()
+    {
+        CastFactory.LocalsOnly = true;
+        try
+        {
+            var stranger = new Person { Name = "Kenji Tanaka", Language = "en", Nationality = "Japanese", VoiceId = "x" };
+            string id = stranger.Id;
+            CastFactory.MakeLocal(stranger, new Random(1));
+            Assert.NotEqual("Kenji Tanaka", stranger.Name);
+            Assert.Equal("no", stranger.Language);
+            Assert.Equal(id, stranger.Id);
+            Assert.Null(stranger.VoiceId);
+
+            var regular = new Person { Name = "Kenji Tanaka", Language = "en", FlightsWithYou = 3 };
+            CastFactory.MakeLocal(regular, new Random(1));
+            Assert.Equal("Kenji Tanaka", regular.Name);
+        }
+        finally { CastFactory.LocalsOnly = false; }
+    }
+
+    [Fact]
+    public void A_misheard_mollisjok_still_finds_the_place() => Assert.Equal("ENMP", WorldData.Find("Moloshock")?.Id);
+}
+
 public class FigureTests
 {
     private static readonly string[] NoTitles = [];
