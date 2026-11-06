@@ -57,6 +57,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
         CompanyName = host.Career.CompanyName;
         PilotKg = host.Career.PilotKg;
         SpeakerModel = host.Settings.SpeakerModel;
+        VoiceModelIndex = Math.Max(0, Array.FindIndex(ElevenLabs.Models, x => x.Id == host.Settings.VoiceModel));
+        RadioEffect = host.Settings.RadioEffect;
         SpeechModelIndex = Array.FindIndex(SpeechModels.All, m => m.Id == host.Settings.SpeechModel);
         if (SpeechModelIndex < 0) SpeechModelIndex = 0;
         LanguageIndex = host.Settings.TalkLanguage switch { "en" => 1, "mixed" => 2, _ => 0 };
@@ -187,6 +189,9 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public string SpeakerModel { get; set; } = "";
     public bool UsingSpeakers { get; set; }
     public bool DoNotDisturb { get; set; }
+    public string[] VoiceModelLabels { get; } = ElevenLabs.Models.Select(x => x.Label).ToArray();
+    public int VoiceModelIndex { get; set; }
+    public bool RadioEffect { get; set; }
     public string[] SpeechModelLabels { get; } = SpeechModels.All.Select(m => m.Label).ToArray();
     public int SpeechModelIndex { get; set; }
     public int LanguageIndex { get; set; }
@@ -198,6 +203,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
         _host.Keys.Anthropic = AnthropicKey;
         _host.Keys.ElevenLabs = ElevenLabsKey;
         _host.Settings.SpeakerModel = SpeakerModel;
+        _host.Settings.VoiceModel = ElevenLabs.Models[Math.Clamp(VoiceModelIndex, 0, ElevenLabs.Models.Length - 1)].Id;
+        _host.Settings.RadioEffect = RadioEffect;
         _host.Settings.SpeechModel = SpeechModels.All[Math.Clamp(SpeechModelIndex, 0, SpeechModels.All.Length - 1)].Id;
         _host.Settings.TalkLanguage = LanguageIndex switch { 1 => "en", 2 => "mixed", _ => "no" };
         _host.LanguageChanged();

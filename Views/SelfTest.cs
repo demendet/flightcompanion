@@ -122,7 +122,7 @@ internal static class SelfTest
         {
             using var audio = new AudioOut();
             var fake = new FakeSpeaker();
-            var clips = new ClipCache(new ElevenLabs(keys, settings));
+            var clips = new ClipCache(new ElevenLabs(keys, settings), settings);
             var who = new Game.People.Person { Name = "Test", Language = "no", SpeaksNorwegian = true };
             using var talk = new Conversation(fake, new SilentVoice(), clips, new VoiceCaster(new ElevenLabs(keys, settings)), audio, who, "none", VoiceFx.Phone, "sys", () => "situation", "no");
             talk.Open("Say hello");

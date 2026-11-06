@@ -29,7 +29,35 @@ public sealed class VoiceException(HttpStatusCode status, string message) : Exce
 public sealed class ElevenLabs(KeyStore keys, AppSettings settings) : IVoiceStream
 {
     public const string BestModel = "eleven_v4_turbo", FallbackModel = "eleven_flash_v2_5";
-    private string _model = BestModel;
+    public static readonly (string Id, string Label)[] Models =
+    [
+        ("eleven_v4_turbo", "V4 Turbo: raskest av de nye"),
+        ("eleven_v4", "V4: mest uttrykksfull, koster dobbelt"),
+        ("eleven_multilingual_v2", "Multilingual v2: ofte nærmest en klonet stemme, tregere, koster dobbelt"),
+        ("eleven_flash_v2_5", "Flash: raskest, enklest"),
+    ];
+
+    private bool _useFallback;
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, (double Stability, double Similarity, double Style, bool Boost)> _voiceSettings = new();
+
+    private string CurrentModel => _useFallback ? FallbackModel : settings.VoiceModel;
+
+    /// <summary>The settings saved on the voice at ElevenLabs. Using these is what makes a clone sound as it does on their site.</summary>
+    public async Task<(double Stability, double Similarity, double Style, bool Boost)> VoiceSettingsAsync(string voiceId, CancellationToken ct)
+    {
+        if (_voiceSettings.TryGetValue(voiceId, out var known)) return known;
+        (double, double, double, bool) result = (0.5, 0.75, 0.0, true);
+        try
+        {
+            using var doc = JsonDocument.Parse(await GetRawAsync($"v1/voices/{voiceId}/settings", ct));
+            var r = doc.RootElement;
+            double Num(string k, double d) => r.TryGetProperty(k, out var x) && x.ValueKind == JsonValueKind.Number ? x.GetDouble() : d;
+            result = (Num("stability", 0.5), Num("similarity_boost", 0.75), Num("style", 0), !r.TryGetProperty("use_speaker_boost", out var b) || b.ValueKind != JsonValueKind.False);
+        }
+        catch (Exception ex) when (ex is VoiceException or HttpRequestException or JsonException) { Log.Error("Voice", "Could not read the voice's settings, using defaults", ex); }
+        _voiceSettings[voiceId] = result;
+        return result;
+    }
     private static readonly HttpClient Http = new(new SocketsHttpHandler { PooledConnectionLifetime = TimeSpan.FromMinutes(10), EnableMultipleHttp2Connections = true })
     {
         BaseAddress = new Uri("https://api.elevenlabs.io/"), Timeout = Timeout.InfiniteTimeSpan,
@@ -39,23 +67,24 @@ public sealed class ElevenLabs(KeyStore keys, AppSettings settings) : IVoiceStre
 
     public async Task StreamAsync(string text, string voiceId, string language, string? previousText, Action<byte[], int> onPcm, CancellationToken ct)
     {
+        var saved = await VoiceSettingsAsync(voiceId, ct);
         using var req = new HttpRequestMessage(HttpMethod.Post, $"v1/text-to-speech/{voiceId}/stream?output_format=pcm_24000");
         req.Headers.Add("xi-api-key", keys.ElevenLabs);
         req.Content = JsonContent.Create(new Dictionary<string, object?>
         {
-            ["text"] = text, ["model_id"] = _model, ["language_code"] = language,
+            ["text"] = text, ["model_id"] = CurrentModel, ["language_code"] = language,
             ["previous_text"] = previousText,
-            ["voice_settings"] = new { stability = 0.45, similarity_boost = 0.75, style = 0.0, use_speaker_boost = false, speed = Math.Clamp(settings.VoiceSpeed, 0.7, 1.2) },
+            ["voice_settings"] = new { stability = saved.Stability, similarity_boost = saved.Similarity, style = saved.Style, use_speaker_boost = saved.Boost, speed = Math.Clamp(settings.VoiceSpeed, 0.7, 1.2) },
         });
         using var resp = await Http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct);
         if (!resp.IsSuccessStatusCode)
         {
             string err = await resp.Content.ReadAsStringAsync(ct);
             // Accounts without the newest model still work, with the fast older one.
-            if (_model == BestModel && resp.StatusCode is HttpStatusCode.BadRequest or HttpStatusCode.Forbidden or HttpStatusCode.PaymentRequired && err.Contains("model", StringComparison.OrdinalIgnoreCase))
+            if (!_useFallback && CurrentModel != FallbackModel && resp.StatusCode is HttpStatusCode.BadRequest or HttpStatusCode.Forbidden or HttpStatusCode.PaymentRequired && err.Contains("model", StringComparison.OrdinalIgnoreCase))
             {
-                Log.Info("Voice", $"{BestModel} is not available on this account, using {FallbackModel}: {err[..Math.Min(160, err.Length)]}");
-                _model = FallbackModel;
+                Log.Info("Voice", $"{CurrentModel} is not available on this account, using {FallbackModel}: {err[..Math.Min(160, err.Length)]}");
+                _useFallback = true;
                 await StreamAsync(text, voiceId, language, previousText, onPcm, ct);
                 return;
             }
@@ -230,10 +259,11 @@ public sealed class VoiceCaster
 }
 
 /// <summary>Short clips kept on disk, so a gasp at a stall horn plays instantly and costs nothing the second time.</summary>
-public sealed class ClipCache(ElevenLabs api)
+public sealed class ClipCache(ElevenLabs api, AppSettings settings)
 {
+    // The model is part of the name: a clip made by another model would sound like a different person.
     private string PathFor(string voice, string language, string text)
-        => Path.Combine(AppPaths.VoiceCache, $"{voice}_{language}_{Hashing.Short(text)}.pcm");
+        => Path.Combine(AppPaths.VoiceCache, $"{voice}_{settings.VoiceModel}_{language}_{Hashing.Short(text)}.pcm");
 
     public byte[]? TryGet(string voice, string language, string text)
     {

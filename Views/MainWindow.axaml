@@ -345,6 +345,12 @@
                     <TextBlock Classes="quiet" Text="{v:Tr 'Restart the app to change the screen language.'}" />
                 </StackPanel>
                 <StackPanel Spacing="4">
+                    <TextBlock Classes="head" Text="{v:Tr 'Voice model'}" />
+                    <ComboBox ItemsSource="{Binding VoiceModelLabels}" SelectedIndex="{Binding VoiceModelIndex}" MinWidth="320" />
+                    <CheckBox IsChecked="{Binding RadioEffect}" Content="{v:Tr 'Phone and headset sound on calls'}" />
+                    <TextBlock Classes="quiet" Text="{v:Tr 'Turn this off to hear a voice exactly as ElevenLabs makes it. Applies from the next call.'}" />
+                </StackPanel>
+                <StackPanel Spacing="4">
                     <TextBlock Classes="head" Text="{v:Tr 'Speech recognition'}" />
                     <ComboBox ItemsSource="{Binding SpeechModelLabels}" SelectedIndex="{Binding SpeechModelIndex}" MinWidth="320" />
                     <TextBlock Classes="quiet" Text="{v:Tr 'Restart the app to change the speech model. A new one downloads on first use.'}" />

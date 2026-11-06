@@ -118,7 +118,7 @@ public sealed class GameHost : IDisposable
         Brain = new Brain(Keys, Settings);
         Voice = new ElevenLabs(Keys, Settings);
         Caster = new VoiceCaster(Voice);
-        Clips = new ClipCache(Voice);
+        Clips = new ClipCache(Voice, Settings);
 
         _ = Task.Run(LoopAsync);
         if (_offline) return;
@@ -430,7 +430,7 @@ public sealed class GameHost : IDisposable
         _endCallSoon = false;
         _chat.Clear();
         _partial = "";
-        var fx = mode switch { TalkMode.Phone => VoiceFx.Phone, TalkMode.Intercom => VoiceFx.Intercom, _ => VoiceFx.Clear };
+        var fx = !Settings.RadioEffect ? VoiceFx.Clear : mode switch { TalkMode.Phone => VoiceFx.Phone, TalkMode.Intercom => VoiceFx.Intercom, _ => VoiceFx.Clear };
         var talk = new Conversation(Brain, Voice, Clips, Caster, Audio, who, voice, fx,
             Prompts.Speaker(who, m, Career, mode, reason, Settings.TalkLanguage), () => SituationNow(m), Settings.TalkLanguage);
         talk.PersonSaid += s => Post(() => AddChat(who.Name, s, false));

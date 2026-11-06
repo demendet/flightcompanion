@@ -7,3 +7,4 @@ obj/
 appsettings.json
 appsettings.*.json
 dist/
+bin*/

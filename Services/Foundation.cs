@@ -125,6 +125,10 @@ public sealed class AppSettings
     public double VoiceVolume { get; set; } = 1.0;
     /// <summary>1 is the voice's normal pace. Slightly under, because a stream of quick sentences on a phone is hard to follow.</summary>
     public double VoiceSpeed { get; set; } = 0.92;
+    /// <summary>Which ElevenLabs model reads the lines. A cloned voice can sound quite different from one model to the next.</summary>
+    public string VoiceModel { get; set; } = ElevenLabs.BestModel;
+    /// <summary>Makes calls sound like a phone and the intercom like a headset. Off plays the voice exactly as generated.</summary>
+    public bool RadioEffect { get; set; } = true;
 
     public static AppSettings Load()
     {
