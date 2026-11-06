@@ -4,33 +4,19 @@ Et karrierespill for Microsoft Flight Simulator 2024. Du driver et lite flyselsk
 
 ## Slik installerer du
 
-Du trenger Windows 10 eller 11 og en mikrofon. Åpne PowerShell og kjør disse linjene, én om gangen:
-
-```powershell
-winget install Git.Git
-```
-
-```powershell
-winget install Microsoft.DotNet.SDK.9
-```
-
-Lukk PowerShell og åpne det på nytt, så Windows finner de nye programmene:
+Du trenger Windows 10 eller 11 og en mikrofon. Du trenger ikke .NET eller noe annet.
 
 ```powershell
 git clone https://github.com/demendet/flightcompanion.git
 ```
 
-```powershell
-.\flightcompanion\Start.bat
-```
+Dobbeltklikk `FlightCompanion.exe` i mappa `flightcompanion`. Simulatoren kan være åpen eller lukket, spillet kobler seg til når den er klar.
 
-Etterpå er det bare å dobbeltklikke `Start.bat` i mappa `flightcompanion` for å starte spillet.
-
-Første start bygger programmet (et minutt eller to) og laster ned talegjenkjenningen, omtrent 1,1 GB. Du ser framdriften nede til venstre i vinduet.
+Første start tar litt ekstra tid og laster ned talegjenkjenningen, omtrent 1,1 GB. Du ser framdriften nede til venstre i vinduet.
 
 ## Slik oppdaterer du
 
-Lukk spillet og kjør dette inne i mappa `flightcompanion`, og start så `Start.bat` igjen:
+Lukk spillet, og kjør dette inne i mappa `flightcompanion`:
 
 ```powershell
 git pull
