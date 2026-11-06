@@ -182,7 +182,7 @@ internal static class SelfTest
                 string pcm = Path.Combine(outDir, "norsk.pcm");
                 if (!File.Exists(pcm)) return "no speech sample";
                 // On the CPU at idle priority: this compares what each one hears. Speed on the GPU is measured in real calls.
-                Whisper.net.LibraryLoader.RuntimeOptions.RuntimeLibraryOrder = [Whisper.net.LibraryLoader.RuntimeLibrary.Cpu];
+                if (Environment.GetEnvironmentVariable("FC_WHISPER_GPU") is null) Whisper.net.LibraryLoader.RuntimeOptions.RuntimeLibraryOrder = [Whisper.net.LibraryLoader.RuntimeLibrary.Cpu];
                 var bytes = File.ReadAllBytes(pcm);
                 var audio = new List<float>();
                 for (double i = 0; i + 1 < bytes.Length / 2; i += 1.5) audio.Add(BitConverter.ToInt16(bytes, (int)i * 2) / 32768f);
@@ -191,7 +191,7 @@ internal static class SelfTest
                 var sw = System.Diagnostics.Stopwatch.StartNew();
                 var text = new System.Text.StringBuilder();
                 await foreach (var seg in proc.ProcessAsync(audio.ToArray(), ct)) text.Append(seg.Text);
-                return $"{audio.Count / 16} ms of audio in {sw.ElapsedMilliseconds} ms on 2 CPU threads: {text.ToString().Trim()}";
+                return $"{audio.Count / 16} ms of audio in {sw.ElapsedMilliseconds} ms : {text.ToString().Trim()}";
             });
         }
     }
