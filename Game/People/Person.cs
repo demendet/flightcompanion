@@ -4,6 +4,9 @@ namespace FlightCompanion.Game.People;
 
 public sealed record MemoryNote(DateTimeOffset When, string Text);
 
+/// <summary>One line in the record between you and a person: what happened and what it did to their trust.</summary>
+public sealed record StandingEvent(DateTimeOffset When, string Text, double TrustChange, bool Serious = false);
+
 /// <summary>Someone in the world. They persist for the whole career and remember how you treated them.</summary>
 public sealed class Person
 {
@@ -40,6 +43,15 @@ public sealed class Person
     public string? ReferredBy { get; set; }
     public string? ArcId { get; set; }
     public List<MemoryNote> Memories { get; set; } = [];
+    public List<StandingEvent> Record { get; set; } = [];
+
+    /// <summary>Every change to their trust goes through here, so the Folk page can always say why.</summary>
+    public void Note(DateTimeOffset when, string text, double trustChange, bool serious = false)
+    {
+        Trust = Math.Clamp(Trust + trustChange, -100, 100);
+        LastContact = when;
+        Record.Add(new StandingEvent(when, text, trustChange, serious));
+    }
     public DateTimeOffset? LastContact { get; set; }
 
     public string DescribeForPrompt()

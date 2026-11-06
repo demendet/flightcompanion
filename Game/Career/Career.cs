@@ -25,6 +25,7 @@ public sealed class CareerState
     public double HoursFlown { get; set; }
     public int FlightsCompleted { get; set; }
     public int OverweightFlights { get; set; }
+    public int OffencesReported { get; set; }
     public int Seed { get; set; } = Random.Shared.Next();
     public int RandomCounter { get; set; }
     public List<Person> People { get; set; } = [];
@@ -139,6 +140,38 @@ public static class CareerStore
     }
 }
 
+public static class Offences
+{
+    /// <summary>
+    /// 1 is rude. 2 is harassment, threats or a sexual proposition, including offering a flight in return. Nobody ever accepts:
+    /// they refuse, the job is off if it can be, and word gets around.
+    /// </summary>
+    public static void Apply(CareerState c, Mission? m, IReadOnlyList<Person> present, string what, int severity, DateTimeOffset now)
+    {
+        bool serious = severity >= 2;
+        double change = serious ? -45 : -8;
+        foreach (var p in present)
+        {
+            p.Note(now, what, change, serious);
+            p.Memories.Add(new MemoryNote(now, what));
+        }
+        if (m is not null)
+        {
+            m.PilotOffended = true;
+            if (serious && m.Phase is MissionPhase.Ringing or MissionPhase.Negotiating or MissionPhase.Booked or MissionPhase.AtPickup or MissionPhase.Boarding)
+                m.Phase = MissionPhase.Cancelled;
+        }
+        if (!serious) return;
+        c.Reputation = Math.Clamp(c.Reputation - 6, 0, 100);
+        c.OffencesReported++;
+        // People up here talk. Those you have dealt with hear about it.
+        foreach (var other in c.People.Where(x => !present.Contains(x) && (x.Talks > 0 || x.FlightsWithYou > 0)))
+            other.Note(now, L.T("Heard how you treated a customer"), -4);
+        if (present.Count > 0)
+            c.Inbox.Add(new SmsMessage(now, present[0].Name, L.T("Never contact me again. I am telling people what you said.")));
+    }
+}
+
 public static class Cancellation
 {
     public static bool Allowed(Mission m) => m.Phase is MissionPhase.Booked or MissionPhase.AtPickup or MissionPhase.Boarding;
@@ -160,8 +193,7 @@ public static class Cancellation
         c.Reputation = Math.Clamp(c.Reputation + reputation, 0, 100);
         if (c.PersonById(m.CallerId) is { } who)
         {
-            who.Trust = Math.Clamp(who.Trust + trust, -100, 100);
-            who.LastContact = now;
+            who.Note(now, L.F("You cancelled {0}", m.Title), trust);
             who.Memories.Add(new MemoryNote(now, L.F("Piloten avlyste turen til {0}.", m.Dropoff?.Name)));
             string text = trust <= -14 ? L.T("You cancelled now? We are standing here with our bags. Thanks for nothing.")
                 : trust <= -6 ? L.T("That was short notice. We will have to find something else.")
@@ -189,6 +221,8 @@ public static class ReviewMaker
         stars -= grade switch { Flight.LandingGrade.Crash => 3, Flight.LandingGrade.Hard => 1.2, Flight.LandingGrade.Firm => 0.3, _ => 0 };
         stars -= s.StallWarnings * 0.4;
         if (!s.LandedAtDestination) stars -= 1.5;
+        stars -= m.Stops.Count(x => !x.Seen) * 1.3;
+        if (m.PilotOffended) stars -= 3;
         if (m.WentOverweight) stars -= 0.2;
         stars = Math.Clamp(stars, 0.5, 5);
 
@@ -200,11 +234,13 @@ public static class ReviewMaker
         else if (comfortAvg > 88) points.Add(L.T("A gentle flight"));
         if (m.WentOverweight) points.Add(L.F("Flew {0:0} kg over maximum weight", Aviation.Units.LbToKg(m.LoadedOverGrossLb)));
         if (!s.LandedAtDestination) points.Add(L.T("Did not land where agreed"));
+        foreach (var missed in m.Stops.Where(x => !x.Seen)) points.Add(L.F("Never flew to {0}", missed.Name));
+        if (m.PilotOffended) points.Add(L.T("You behaved badly towards them"));
 
         double agreed = m.Plan.PriceNok ?? 0;
         double pay = stars < 1.5 ? agreed * 0.5 : agreed;
         double wealth = lead?.Wealth ?? 0.5;
-        double tip = stars >= 4.3 ? agreed * (0.03 + 0.2 * wealth) * (stars - 3.8) : 0;
+        double tip = stars >= 4.3 && !m.PilotOffended ? agreed * (0.03 + 0.2 * wealth) * (stars - 3.8) : 0;
         double repair = grade switch { Flight.LandingGrade.Crash => 60000, Flight.LandingGrade.Hard => 9000, _ => 0 };
         if (m.WentOverweight) repair += Math.Min(4000, m.LoadedOverGrossLb * 15);
         double fuelCost = s.FuelBurnedGal * fuelPriceNok;
@@ -236,8 +272,7 @@ public static class ReviewMaker
         {
             if (c.PersonById(id) is not { } p) continue;
             p.FlightsWithYou++;
-            p.Trust = Math.Clamp(p.Trust + r.TrustDelta, -100, 100);
-            p.LastContact = now;
+            p.Note(now, L.F("{0}: {1:0.0} of 5", m.Title, r.Stars), r.TrustDelta);
         }
     }
 }

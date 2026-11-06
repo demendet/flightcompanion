@@ -40,7 +40,7 @@ public sealed class ElevenLabs(KeyStore keys, AppSettings settings) : IVoiceStre
     private bool _useFallback;
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, (double Stability, double Similarity, double Style, bool Boost)> _voiceSettings = new();
 
-    private string CurrentModel => _useFallback ? FallbackModel : settings.VoiceModel;
+    public string CurrentModel => _useFallback ? FallbackModel : settings.VoiceModel;
 
     /// <summary>The settings saved on the voice at ElevenLabs. Using these is what makes a clone sound as it does on their site.</summary>
     public async Task<(double Stability, double Similarity, double Style, bool Boost)> VoiceSettingsAsync(string voiceId, CancellationToken ct)
@@ -65,16 +65,29 @@ public sealed class ElevenLabs(KeyStore keys, AppSettings settings) : IVoiceStre
 
     public bool HasKey => !string.IsNullOrEmpty(keys.ElevenLabs);
 
-    public async Task StreamAsync(string text, string voiceId, string language, string? previousText, Action<byte[], int> onPcm, CancellationToken ct)
+    public Task StreamAsync(string text, string voiceId, string language, string? previousText, Action<byte[], int> onPcm, CancellationToken ct)
+        => StreamCoreAsync(text, voiceId, language, previousText, false, onPcm, ct);
+
+    /// <summary>A scream in this person's own voice: as loose as the voice goes. Only the V4 voices follow the direction in brackets, older ones would read it out.</summary>
+    public async Task<byte[]> RenderPanicAsync(string text, string voiceId, string language, CancellationToken ct)
+    {
+        string said = CurrentModel.StartsWith("eleven_v4", StringComparison.Ordinal) ? text : System.Text.RegularExpressions.Regex.Replace(text, @"\[[^\]]*\]\s*", "");
+        using var ms = new MemoryStream();
+        await StreamCoreAsync(said, voiceId, language, null, true, (b, c) => ms.Write(b, 0, c), ct);
+        return ms.ToArray();
+    }
+
+    private async Task StreamCoreAsync(string text, string voiceId, string language, string? previousText, bool panic, Action<byte[], int> onPcm, CancellationToken ct)
     {
         var saved = await VoiceSettingsAsync(voiceId, ct);
+        if (panic) saved = (0.0, saved.Similarity, 1.0, saved.Boost);
         using var req = new HttpRequestMessage(HttpMethod.Post, $"v1/text-to-speech/{voiceId}/stream?output_format=pcm_24000");
         req.Headers.Add("xi-api-key", keys.ElevenLabs);
         req.Content = JsonContent.Create(new Dictionary<string, object?>
         {
             ["text"] = text, ["model_id"] = CurrentModel, ["language_code"] = language,
             ["previous_text"] = previousText,
-            ["voice_settings"] = new { stability = saved.Stability, similarity_boost = saved.Similarity, style = saved.Style, use_speaker_boost = saved.Boost, speed = Math.Clamp(settings.VoiceSpeed, 0.7, 1.2) },
+            ["voice_settings"] = new { stability = saved.Stability, similarity_boost = saved.Similarity, style = saved.Style, use_speaker_boost = saved.Boost, speed = panic ? 1.1 : Math.Clamp(settings.VoiceSpeed, 0.7, 1.2) },
         });
         using var resp = await Http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct);
         if (!resp.IsSuccessStatusCode)
@@ -274,6 +287,14 @@ public sealed class ClipCache(ElevenLabs api, AppSettings settings)
     {
         string p = PathFor(voice, language, text);
         return File.Exists(p) ? File.ReadAllBytes(p) : null;
+    }
+
+    public async Task EnsurePanicAsync(string voice, string language, string text, CancellationToken ct)
+    {
+        string p = PathFor(voice, language, text);
+        if (File.Exists(p)) return;
+        byte[] pcm = await api.RenderPanicAsync(text, voice, language, ct);
+        await File.WriteAllBytesAsync(p, pcm, ct);
     }
 
     public async Task EnsureAsync(string voice, string language, string text, CancellationToken ct)

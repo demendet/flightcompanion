@@ -72,7 +72,81 @@ public sealed class Conversation : IDisposable
         _talkLanguage = talkLanguage;
         _brain = brain; _voice = voice; _clips = clips; _caster = caster; _audio = audio;
         _cast = cast; _lead = cast[0]; _system = system; _situation = situation;
+        _fx = fx;
         _channel = audio.CreateVoice(fx);
+    }
+
+    private readonly VoiceFx _fx;
+    private CancellationTokenSource? _panicCts;
+    public bool Panicking => _panicCts is not null;
+
+    /// <summary>
+    /// Everyone screams at once, each on their own channel with their own clips, so nobody cuts anyone off. Nothing else talks
+    /// until it is over, and the pilot talking over them does not stop it.
+    /// </summary>
+    public void StartPanic(Func<CastMember, string, IReadOnlyList<string>> linesFor)
+    {
+        if (_ended || _panicCts is not null) return;
+        var loops = new List<(CastMember Who, List<byte[]> Clips)>();
+        foreach (var member in _cast)
+        {
+            string lang = LanguageOf(member);
+            var clips = linesFor(member, lang).Select(line => _clips.TryGet(member.VoiceId, lang, line)).OfType<byte[]>().ToList();
+            if (clips.Count > 0) loops.Add((member, clips));
+        }
+        if (loops.Count == 0) return;   // nothing rendered yet: the ordinary reactions still run
+        CancelTurn();
+        var cts = new CancellationTokenSource();
+        _panicCts = cts;
+        foreach (var (who, clips) in loops)
+        {
+            PersonSaid?.Invoke(who.Person.Name, Game.L.T("(screaming)"));
+            _ = Task.Run(() => PanicLoopAsync(clips, _audio.CreateVoice(_fx), loops.Count, cts.Token));
+        }
+    }
+
+    public void StopPanic()
+    {
+        _panicCts?.Cancel();
+        _panicCts = null;
+    }
+
+    private static async Task PanicLoopAsync(List<byte[]> clips, VoiceChannel channel, int people, CancellationToken ct)
+    {
+        const int BytesPerSecond = VoiceChannel.SampleRate * 2;
+        try
+        {
+            await Task.Delay(Random.Shared.Next(0, 500), ct);
+            int i = Random.Shared.Next(clips.Count);
+            while (!ct.IsCancellationRequested)
+            {
+                byte[] clip = Quieter(clips[i++ % clips.Count], people);
+                channel.Push(clip, clip.Length);
+                await Task.Delay(clip.Length * 1000 / BytesPerSecond + Random.Shared.Next(50, 350), ct);
+            }
+        }
+        catch (OperationCanceledException) { }
+        finally
+        {
+            // The scream in progress is finished, not cut.
+            for (int waited = 0; channel.IsPlaying && waited < 80; waited++) await Task.Delay(100, CancellationToken.None);
+            channel.Dispose();
+        }
+    }
+
+    /// <summary>Several people at full voice would clip the output.</summary>
+    private static byte[] Quieter(byte[] pcm, int people)
+    {
+        if (people <= 1) return pcm;
+        float gain = 1f / MathF.Sqrt(people);
+        var quiet = new byte[pcm.Length];
+        for (int i = 0; i + 1 < pcm.Length; i += 2)
+        {
+            short s = (short)(BitConverter.ToInt16(pcm, i) * gain);
+            quiet[i] = (byte)s;
+            quiet[i + 1] = (byte)(s >> 8);
+        }
+        return quiet;
     }
 
     /// <summary>The scene changes without a new conversation: walking up to the plane, climbing in. People remember what was just said.</summary>
@@ -102,7 +176,7 @@ public sealed class Conversation : IDisposable
     /// <summary>Pre-rendered clip played straight through, from a random person on board: the reaction that beats the network.</summary>
     public void Say(Func<CastMember, string, string> lineFor)
     {
-        if (_channel.IsPlaying) return;
+        if (_channel.IsPlaying || Panicking) return;
         var who = _cast[Random.Shared.Next(_cast.Count)];
         string lang = LanguageOf(who);
         var clip = _clips.TryGet(who.VoiceId, lang, lineFor(who, lang));
@@ -119,7 +193,7 @@ public sealed class Conversation : IDisposable
 
     private void StartTurn(string userContent, string? pilotText)
     {
-        if (_ended) return;
+        if (_ended || Panicking) return;
         CancelTurn();
         var cts = new CancellationTokenSource();
         lock (_lock) _turnCts = cts;
@@ -144,22 +218,6 @@ public sealed class Conversation : IDisposable
         long firstByte = _channel.QueuedBytes;
         string lang = LanguageOf(_lead);
         bool firstAudio = false, firstText = false;
-
-        // The filler goes out only if the real reply is slow, so most turns never use one.
-        _ = Task.Run(async () =>
-        {
-            try
-            {
-                await Task.Delay(800, ct);
-                if (!firstAudio && !_channel.IsPlaying)
-                {
-                    var fillers = lang == "no" ? ReactionLines.FillersNo : ReactionLines.FillersEn;
-                    var clip = _clips.TryGet(_lead.VoiceId, lang, fillers[Random.Shared.Next(fillers.Length)]);
-                    if (clip is not null) _channel.Push(clip, clip.Length);
-                }
-            }
-            catch (OperationCanceledException) { }
-        }, CancellationToken.None);
 
         var speakTask = Task.Run(async () =>
         {

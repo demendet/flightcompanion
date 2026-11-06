@@ -48,6 +48,30 @@ public sealed class MapKnowledge
         }, ct);
     }
 
+    /// <summary>Finds a place someone named, on the real map of Finnmark. Null if it does not exist there.</summary>
+    public async Task<PointOfInterest?> FindAsync(string name, CancellationToken ct)
+    {
+        var known = WorldData.Sights.Concat(Known).FirstOrDefault(s => s.Name.Contains(name, StringComparison.OrdinalIgnoreCase) || name.Contains(s.Name.Replace("the ", ""), StringComparison.OrdinalIgnoreCase));
+        if (known is not null) return known;
+        try
+        {
+            string url = "https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&bounded=1&viewbox=20.5,71.3,31.5,68.3&q=" + Uri.EscapeDataString(name);
+            using var doc = JsonDocument.Parse(await Http.GetStringAsync(url, ct));
+            var hits = doc.RootElement;
+            if (hits.GetArrayLength() == 0) return null;
+            var hit = hits[0];
+            double lat = double.Parse(hit.GetProperty("lat").GetString()!, CultureInfo.InvariantCulture);
+            double lon = double.Parse(hit.GetProperty("lon").GetString()!, CultureInfo.InvariantCulture);
+            string label = hit.TryGetProperty("name", out var n) && n.GetString() is { Length: > 0 } s ? s : name;
+            return new PointOfInterest(label, lat, lon, "a place the customer asked to see", 10);
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException or FormatException)
+        {
+            Log.Info("Map", $"Could not look up a place: {ex.GetType().Name}");
+            return null;
+        }
+    }
+
     public async Task<int> FetchAsync(double lat, double lon, CancellationToken ct)
     {
         string at = string.Create(CultureInfo.InvariantCulture, $"around:{RadiusM},{lat:0.###},{lon:0.###}");

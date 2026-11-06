@@ -29,6 +29,11 @@ public sealed record PlanPatch
     public bool? PilotDeclined { get; init; }
     public bool? CallIsOver { get; init; }
     public string? NewNote { get; init; }
+    /// <summary>A place someone wants flown over, as spoken.</summary>
+    public string? TourPlace { get; init; }
+    /// <summary>What the pilot did wrong, in one plain Norwegian sentence.</summary>
+    public string? OffenceNote { get; init; }
+    public int? OffenceSeverity { get; init; }
 }
 
 public static class PlanPatcher

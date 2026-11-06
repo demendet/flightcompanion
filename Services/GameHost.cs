@@ -122,6 +122,7 @@ public sealed class GameHost : IDisposable
         Mic.Partial += p => Post(() => { _partial = p; Changed?.Invoke(); });
         Mic.Final += (text, lang) => Post(() => OnPilotSpoke(text, lang));
         Brain = new Brain(Keys, Settings);
+        Sim.Crashed += () => Post(() => { _panic.Reset(); OnCrash(); });
         Voice = new ElevenLabs(Keys, Settings);
         Caster = new VoiceCaster(Voice);
         Clips = new ClipCache(Voice, Settings);
@@ -432,6 +433,16 @@ public sealed class GameHost : IDisposable
         Changed?.Invoke();
     });
 
+    /// <summary>Ring someone from the people list, with or without a flight to talk about.</summary>
+    public void CallPersonById(string personId) => Post(() =>
+    {
+        if (_talk is not null || _ringing is not null || Career.PersonById(personId) is not { } p) return;
+        var open = Career.OpenMissions.FirstOrDefault(m => m.CallerId == p.Id);
+        Audio.Beep();
+        OpenTalk(p, open, TalkMode.Phone, open is null ? "The pilot is calling you, and you do not know why. Answer and find out. There is no flight booked between you right now." : "The pilot is calling you about your flight. You do not know why yet, so answer and find out.",
+            "You just answered your phone. The pilot is calling. Answer with your name.");
+    });
+
     public void RequestJob() => Post(() =>
     {
         if (_ringing is not null || _talk is not null || !ReadyForCalls) return;
@@ -451,6 +462,7 @@ public sealed class GameHost : IDisposable
             return;
         }
         var cast = BuildCast(who, m, mode);
+        Mic.Names = new NameFixer(WorldData.Places.Select(x => x.Name).Concat(WorldData.Landmarks.Select(x => x.Name)).Concat(cast.Select(x => x.Person.Name)).Concat(m?.Stops.Select(x => x.Name) ?? []));
         if (cast.Count == 0)
         {
             VoiceHealth = new Health(HealthLevel.Problem, L.T("No voices available from ElevenLabs"));
@@ -463,6 +475,7 @@ public sealed class GameHost : IDisposable
         _talkMission = m;
         _talkMode = mode;
         _endCallSoon = false;
+        _offenceThisTalk = 0;
         _chat.Clear();
         _partial = "";
         var fx = !Settings.RadioEffect ? VoiceFx.Clear : mode switch { TalkMode.Phone => VoiceFx.Phone, TalkMode.Intercom => VoiceFx.Intercom, _ => VoiceFx.Clear };
@@ -515,7 +528,9 @@ public sealed class GameHost : IDisposable
             if (voice is null) continue;
             string first = p.Name.Split(' ')[0];
             string label = people.Count(x => x.Name.Split(' ')[0] == first) > 1 ? p.Name : first;
-            cast.Add(new CastMember(p, voice, Dialects.FromAccent(Caster.AccentOf(voice)), label));
+            // The player's own clone sounds right on plain words. Dialect spelling makes it sound like someone else.
+            var dialect = voice == Caster.ClonedVoiceId ? Dialect.Unknown : Dialects.FromAccent(Caster.AccentOf(voice));
+            cast.Add(new CastMember(p, voice, dialect, label));
         }
         return cast;
     }
@@ -539,11 +554,13 @@ public sealed class GameHost : IDisposable
                 foreach (var c in cast)
                 {
                     string lang = SpeechText.VoiceLanguage(c.Person.Language, c.Person.SpeaksNorwegian, null, language);
-                    foreach (var f in lang == "no" ? ReactionLines.FillersNo : ReactionLines.FillersEn)
-                        await Clips.EnsureAsync(c.VoiceId, lang, f, ct);
                     if (mode != TalkMode.Phone)
+                    {
+                        foreach (var line in lang == "no" ? ReactionLines.PanicNo : ReactionLines.PanicEn)
+                            await Clips.EnsurePanicAsync(c.VoiceId, lang, lang == "no" ? Dialects.Adapt(line, c.Dialect) : line, ct);
                         foreach (var (_, line) in ReactionLines.All(lang))
                             await Clips.EnsureAsync(c.VoiceId, lang, lang == "no" ? Dialects.Adapt(line, c.Dialect) : line, ct);
+                    }
                 }
             }
             catch (VoiceException ex) { Log.Error("Voice", "Could not prepare clips", ex); }
@@ -557,8 +574,30 @@ public sealed class GameHost : IDisposable
         var now = DateTimeOffset.Now;
         string? phone = m is not null && _talkMode == TalkMode.Phone ? WeatherFeed.PhoneAppVersion(_forecast.GetValueOrDefault(m.Id)) : null;
         var visible = Latest is { OnGround: false } t ? SightWatcher.Visible(t.Lat, t.Lon, t.HeadingTrue, AllSights()) : null;
-        return Prompts.Situation(now, m, Latest, _monitor.Comfort, phone, visible);
+        string? where = m is { Phase: MissionPhase.Negotiating or MissionPhase.Booked, Pickup: { } pickup } && _talkMode == TalkMode.Phone ? TripTiming.PilotLine(MinutesAwayFor(m), pickup.Name)
+            : m is not null && _talkMode is TalkMode.Intercom or TalkMode.Debrief ? TripNow(m) : null;
+        return Prompts.Situation(now, m, Latest, _monitor.Comfort, phone, visible, where);
     }
+
+    /// <summary>What the people on board know about the trip, from the plan and where the aircraft really is.</summary>
+    private string TripNow(Mission m)
+    {
+        var nav = Navigation.Next(m, Latest, CurrentAircraft());
+        string? nearName = null;
+        double nearKm = 0;
+        if (Latest is { } t)
+        {
+            var near = WorldData.Places.Select(p => (p.Name, Km: Geo.DistanceM(t.Lat, t.Lon, p.Lat, p.Lon) / 1000))
+                .Concat(AllSights().Select(s => (s.Name, Km: Geo.DistanceM(t.Lat, t.Lon, s.Lat, s.Lon) / 1000)))
+                .OrderBy(x => x.Km).FirstOrDefault();
+            if (near.Name is not null && near.Km < 60) (nearName, nearKm) = near;
+        }
+        string? landing = Latest is { } a && m.Dropoff is { } to
+            ? Prompts.LandingNote(to.Name, Geo.DistanceNm(a.Lat, a.Lon, to.Lat, to.Lon), a.AglFt, a.VerticalFpm, a.GroundSpeedKt, a.OnGround) : null;
+        return Prompts.WhereNow(m.Pickup?.Name, m.Dropoff?.Name, nav?.Name, nav?.DistanceNm ?? 0, nav?.Minutes ?? 0, nearName, nearKm, landing);
+    }
+
+    private double MinutesAwayFor(Mission m) => TripTiming.MinutesAway(Latest?.Lat ?? Career.LastLat, Latest?.Lon ?? Career.LastLon, m.Pickup, CurrentAircraft().CruiseKtas);
 
     private IEnumerable<PointOfInterest> AllSights() => WorldData.Sights.Concat(_map.Known);
 
@@ -611,11 +650,11 @@ public sealed class GameHost : IDisposable
     /// <summary>Speech never waits for this. The newest exchange replaces a note taking still in progress.</summary>
     private void OnExchangeDone(Conversation talk)
     {
-        if (_talk != talk || _talkMission is not { } m || _talkMode is TalkMode.Intercom) return;
+        if (_talk != talk || _talkMission is not { } m) return;
         _scribeCts?.Cancel();
         var cts = new CancellationTokenSource();
         _scribeCts = cts;
-        string prompt = Prompts.ScribeUser(DateTimeOffset.Now, m.Plan, talk.TranscriptLines(Career.PilotName).TakeLast(30));
+        string prompt = Prompts.ScribeUser(DateTimeOffset.Now, m.Plan, talk.TranscriptLines(Career.PilotName).TakeLast(30), MinutesAwayFor(m));
         _ = Task.Run(async () =>
         {
             try
@@ -632,8 +671,31 @@ public sealed class GameHost : IDisposable
         });
     }
 
+    private int _offenceThisTalk;
+
+    private void HandleOffence(Mission m, PlanPatch p)
+    {
+        if (p.OffenceSeverity is not { } severity || severity <= _offenceThisTalk) return;
+        _offenceThisTalk = severity;
+        var present = _talk?.Cast.Select(c => c.Person).ToList() ?? [];
+        string what = string.IsNullOrWhiteSpace(p.OffenceNote) ? L.T("You behaved badly towards them") : p.OffenceNote!;
+        Offences.Apply(Career, m, present, what, severity, DateTimeOffset.Now);
+        Log.Info("Game", $"Offence, severity {severity}: {what}");
+        if (severity >= 2)
+        {
+            Toast?.Invoke(what);
+            if (_talkMode is not TalkMode.Intercom and not TalkMode.Debrief) _endCallSoon = true;
+            DespawnPeople(m);
+        }
+    }
+
     private void ApplyPatch(Mission m, PlanPatch p)
     {
+        HandleOffence(m, p);
+        if (m.Phase == MissionPhase.Cancelled) { Save(); Changed?.Invoke(); return; }
+        if (_talkMode is TalkMode.Intercom or TalkMode.Debrief) { Changed?.Invoke(); return; }
+        if (p.TourPlace is { Length: > 1 } place && !m.Stops.Any(x => x.Name.Contains(place, StringComparison.OrdinalIgnoreCase)))
+            _ = AddStopAsync(m, place);
         var changes = PlanPatcher.Apply(m.Plan, p, DateTimeOffset.Now, Clock.Zone);
         if (changes.Any(c => c.Field is "time" or "pickup")) _ = RefreshForecast(m);
         if (changes.Any(c => c.Field == "time"))
@@ -679,11 +741,12 @@ public sealed class GameHost : IDisposable
         if (m is not null && mode == TalkMode.Phone && m.Phase == MissionPhase.Negotiating)
         {
             // One final pass over the whole call, so the booking reflects its last sentences even if the last note was cancelled.
+            double away = MinutesAwayFor(m);
             _ = Task.Run(async () =>
             {
                 try
                 {
-                    var patch = await Brain.ListenAsync(Prompts.ScribeUser(DateTimeOffset.Now, m.Plan, transcript), _stop.Token).ConfigureAwait(false);
+                    var patch = await Brain.ListenAsync(Prompts.ScribeUser(DateTimeOffset.Now, m.Plan, transcript, away), _stop.Token).ConfigureAwait(false);
                     Post(() => { if (patch is not null) ApplyPatch(m, patch); FinishNegotiation(m); });
                 }
                 catch (Exception ex) when (ex is not OutOfMemoryException)
@@ -704,7 +767,8 @@ public sealed class GameHost : IDisposable
             bool enough = m.Plan.Agreed || (m.Plan.PickupTime is not null && m.Plan.PriceNok is not null);
             if (enough)
             {
-                m.Plan.PickupTime ??= DateTimeOffset.Now.AddMinutes(60);
+                var now = DateTimeOffset.Now;
+                m.Plan.PickupTime = TripTiming.Settle(m.Plan.PickupTime, TripTiming.Earliest(now, MinutesAwayFor(m)));
                 m.Plan.PriceNok ??= SuggestedPrice(m);
                 m.Plan.Agreed = true;
                 m.Phase = MissionPhase.Booked;
@@ -714,6 +778,20 @@ public sealed class GameHost : IDisposable
         }
         Save();
         Changed?.Invoke();
+    }
+
+    private async Task AddStopAsync(Mission m, string place)
+    {
+        var found = await _map.FindAsync(place, _stop.Token).ConfigureAwait(false);
+        Post(() =>
+        {
+            if (found is null) { Toast?.Invoke(L.F("Could not find {0} on the map", place)); return; }
+            if (m.Stops.Any(x => x.Name == found.Name)) return;
+            m.Stops.Add(new TourStop { Name = found.Name, Lat = found.Lat, Lon = found.Lon, Note = found.Note });
+            m.Sightseeing = true;
+            m.Plan.Changes.Add(new PlanChange(DateTimeOffset.Now, "sight", "", found.Name));
+            Changed?.Invoke();
+        });
     }
 
     public double SuggestedPrice(Mission m)
@@ -740,6 +818,20 @@ public sealed class GameHost : IDisposable
         DespawnPeople(m);
         Cancellation.Apply(m, Career, DateTimeOffset.Now);
         Toast?.Invoke(L.F("Cancelled: {0}", m.Title));
+        Save();
+        Changed?.Invoke();
+    });
+
+    /// <summary>Moves a booked pickup: null means as soon as the aircraft can get there, otherwise by that many minutes.</summary>
+    public void MoveTime(string id, int? byMinutes) => Post(() =>
+    {
+        if (Career.MissionById(id) is not { Phase: MissionPhase.Booked } m) return;
+        var now = DateTimeOffset.Now;
+        var earliest = TripTiming.Earliest(now, MinutesAwayFor(m));
+        var wanted = byMinutes is { } by ? (m.Plan.PickupTime ?? now).AddMinutes(by) : earliest;
+        var when = TripTiming.Move(m, Career, wanted, earliest, now);
+        _ = RefreshForecast(m);
+        Toast?.Invoke(L.F("Moved: {0}, {1} at {2}", m.Title, m.Pickup?.Name, Clock.ToLocal(when).ToString("HH:mm")));
         Save();
         Changed?.Invoke();
     });
@@ -837,7 +929,7 @@ public sealed class GameHost : IDisposable
         var tpl = MissionCatalog.ById(m.TemplateId);
         if (tpl?.HasReturn == true)
         {
-            var when = m.Plan.ReturnTime ?? new DateTimeOffset(now.AddDays(2).Date.AddHours(14), Clock.Zone.GetUtcOffset(now.AddDays(2).Date.AddHours(14)));
+            var when = m.Plan.ReturnTime ?? TripTiming.DefaultReturn(now, _rng);
             var back = MissionFactory.CreateReturn(m, when, now);
             Career.Missions.Add(back);
             Career.Inbox.Add(new SmsMessage(now, lead?.Name ?? "Customer", L.F("See you at {0} on {1} at {2} for the trip home.", back.Pickup?.Name, Clock.ToLocal(when).ToString("dddd", L.Norwegian ? System.Globalization.CultureInfo.GetCultureInfo("nb-NO") : System.Globalization.CultureInfo.InvariantCulture), Clock.ToLocal(when).ToString("HH:mm"))));
@@ -946,6 +1038,40 @@ public sealed class GameHost : IDisposable
 
     // ---- Flying ----------------------------------------------------------------------------------------------------
 
+    /// <summary>One line on where to fly now, refreshed as you move. For the map panel.</summary>
+    public string? SelectedMissionId { get; set; }
+    public string NavLine { get; private set; } = "";
+    private DateTimeOffset _lastNav;
+
+    public IReadOnlyList<PointOfInterest> KnownPlaces => _map.Known;
+    public ViewModels.PlanePos? PlanePosition { get; private set; }
+    public string ReachLine { get; private set; } = "";
+    private readonly List<(double Lat, double Lon)> _trail = [];
+    private DateTimeOffset _lastTrail;
+
+    private void UpdateNav(Telemetry t, DateTimeOffset now)
+    {
+        if ((now - _lastNav).TotalSeconds < 0.5) return;
+        _lastNav = now;
+        var a = CurrentAircraft();
+        var focus = ActiveMission ?? Career.MissionById(SelectedMissionId) ?? Career.OpenMissions.OrderBy(m => m.Plan.PickupTime ?? DateTimeOffset.MaxValue).FirstOrDefault();
+        var nav = Navigation.Next(focus, t, a);
+        NavLine = nav is null ? "" : L.F("Fly to {0}: course {1:000}, {2:0} nm, {3:0} min", nav.Name, nav.CourseMagnetic, nav.DistanceNm, nav.Minutes);
+
+        if (t.OnGround && t.GroundSpeedKt < 1) _trail.Clear();
+        else if ((now - _lastTrail).TotalSeconds >= 4)
+        {
+            _lastTrail = now;
+            _trail.Add((t.Lat, t.Lon));
+            if (_trail.Count > 1200) _trail.RemoveAt(0);
+        }
+        // How far the fuel reaches and still lands with the reserve.
+        double reach = Math.Max(0, (t.FuelGal - a.BurnGph * 0.5) / a.BurnGph * a.CruiseKtas);
+        ReachLine = L.F("The fuel reaches about {0:0} nm with reserve", reach);
+        PlanePosition = new ViewModels.PlanePos(t.Lat, t.Lon, t.HeadingTrue, reach, _trail.ToList(), nav?.Lat, nav?.Lon);
+        if (!t.OnGround) _map.RefreshIfMoved(t.Lat, t.Lon, _stop.Token);
+    }
+
     private bool _simFactsLogged;
     private DateTimeOffset _firstSample;
 
@@ -971,8 +1097,10 @@ public sealed class GameHost : IDisposable
         var now = DateTimeOffset.Now;
         var flow = _flow.Step(t, flight, now, _monitor.Comfort);
         foreach (var e in flow) OnFlow(e);
+        StepPanic(t);
         foreach (var e in flight) OnFlightEvent(e, now);
         WatchTheView(t, now);
+        UpdateNav(t, now);
         if (flow.Count > 0 || flight.Count > 0) Changed?.Invoke();
         LiveChanged?.Invoke();
     }
@@ -993,7 +1121,14 @@ public sealed class GameHost : IDisposable
             case CanMeetInPerson m:
                 if (Latest?.OnFoot == true) MeetInPerson();
                 break;
+            case StopReached stop:
+                _lastSightComment = DateTimeOffset.Now;
+                _talk?.React($"You are now flying over {stop.Stop.Name}, which is what you wanted to see. {stop.Stop.Note}. Be excited about it, in your own way");
+                Toast?.Invoke(L.F("{0}: check", stop.Stop.Name));
+                break;
             case MissionLanded l:
+                if (l.Mission.Stops.Where(x => !x.Seen).Select(x => x.Name).ToList() is { Count: > 0 } missed)
+                    _talk?.React($"The pilot has landed without ever flying over {string.Join(" or ", missed)}, which is what you paid for. You are unhappy about it, and you say so");
                 if (_talk is not null && _talkMission == l.Mission && Career.PersonById(l.Mission.CallerId) is { } who)
                 {
                     _talkMode = TalkMode.Debrief;
@@ -1004,6 +1139,54 @@ public sealed class GameHost : IDisposable
                 Toast?.Invoke(L.T("Parked. Settle up with them on the card."));
                 break;
         }
+    }
+
+    private readonly PanicWatcher _panic = new();
+
+    private void StepPanic(Telemetry t)
+    {
+        switch (_panic.Step(t))
+        {
+            case PanicChange.Began:
+                BeginPanic();
+                break;
+            case PanicChange.Ended:
+                if (_talk?.Panicking == true)
+                {
+                    _talk.StopPanic();
+                    _talk.React("That terrifying moment is over and you are still alive. You are shaking. Tell the pilot what you think of that, in your own way");
+                }
+                break;
+            case PanicChange.Crashed:
+                OnCrash();
+                break;
+        }
+    }
+
+    private void BeginPanic()
+    {
+        if (_talk is null || _talkMode is not (TalkMode.Intercom or TalkMode.Debrief)) return;
+        Log.Info("Flight", "Everyone on board is panicking");
+        _talk.StartPanic((member, lang) => (lang == "no" ? ReactionLines.PanicNo : ReactionLines.PanicEn)
+            .Select(line => lang == "no" ? Dialects.Adapt(line, member.Dialect) : line).ToList());
+    }
+
+    /// <summary>The scream goes on through the impact, then the shock.</summary>
+    private void OnCrash()
+    {
+        var talk = _talk;
+        if (talk is null || _talkMode is not (TalkMode.Intercom or TalkMode.Debrief)) return;
+        Log.Info("Flight", "Crash");
+        BeginPanic();
+        _ = Task.Delay(4000, _stop.Token).ContinueWith(d =>
+        {
+            if (d.IsCanceled) return;
+            Post(() =>
+            {
+                talk.StopPanic();
+                if (_talk == talk) talk.React("The aircraft has just crashed. You are alive, hurt and in complete shock. Nothing about this is normal");
+            });
+        }, TaskScheduler.Default);
     }
 
     private void OnFlightEvent(FlightEvent e, DateTimeOffset now)

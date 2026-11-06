@@ -43,7 +43,8 @@ public sealed class Listener : IDisposable, IMMNotificationClient
     private volatile bool _busy;
     private int _framesSincePartial;
     private bool _disposed;
-    private string _prompt = "Hei, dette er piloten. Vi flyr fra Lakselv til Mollisjok, Ravnastua og Karasjok, over Finnmarksvidda. Bagasje, kilo, kroner, drivstoff, Alta, Banak, Kautokeino, Mollisjok.";
+    private const string Prompt = "Hei, det er piloten. Jeg kan hente deg nå med en gang på Mollisjok. Vi flyr fra Alta til Karasjok, Lakselv, Banak, Ravnastua, Kautokeino, Honningsvåg, Hammerfest og Kirkenes over Finnmarksvidda. To tusen kroner, bagasje, kilo, drivstoff.";
+    private const float QuietPeak = 0.3f, TargetPeak = 0.7f, MaxGain = 6f;
 
     private sealed record WorkItem(float[] Samples, bool Final);
 
@@ -58,6 +59,8 @@ public sealed class Listener : IDisposable, IMMNotificationClient
     /// <summary>True while a voice plays through speakers: then we must not listen, or the character hears itself.</summary>
     public bool HalfDuplexHold { get; set; }
     public string? PreferredLanguage { get; set; }
+    /// <summary>The names that matter right now. Put right on the finished text, so hearing them costs no time.</summary>
+    public Game.Talk.NameFixer? Names { get; set; }
     public string LastLanguage { get; private set; } = "en";
     public string? DeviceName { get; private set; }
 
@@ -70,8 +73,6 @@ public sealed class Listener : IDisposable, IMMNotificationClient
         _watchdog = new Timer(_ => Watch(), null, 1000, 1000);
         if (load) _ = Task.Run(LoadModelsAsync);
     }
-
-    public void SetVocabulary(string words) => _prompt = words;
 
     private async Task LoadModelsAsync()
     {
@@ -230,12 +231,14 @@ public sealed class Listener : IDisposable, IMMNotificationClient
             try
             {
                 var sw = System.Diagnostics.Stopwatch.StartNew();
-                var (text, lang) = Transcribe(item.Samples).GetAwaiter().GetResult();
-                if (string.IsNullOrWhiteSpace(text) || IsWhisperNoise(text)) continue;
+                float peak = Peak(item.Samples);
+                var (raw, lang) = Transcribe(Louder(item.Samples, peak)).GetAwaiter().GetResult();
+                if (string.IsNullOrWhiteSpace(raw) || IsWhisperNoise(raw)) continue;
+                string text = Names?.Fix(raw) ?? raw;
                 if (item.Final)
                 {
                     LastLanguage = lang;
-                    Log.Info("Mic", $"Heard ({lang}, {item.Samples.Length / 16} ms audio in {sw.ElapsedMilliseconds} ms): {text}");
+                    Log.Info("Mic", $"Heard ({lang}, {item.Samples.Length / 16} ms audio, peak {peak:0.00}, in {sw.ElapsedMilliseconds} ms): {text}" + (text == raw ? "" : $" [recognised as: {raw}]"));
                     Final?.Invoke(text, lang);
                 }
                 else Partial?.Invoke(text);
@@ -253,14 +256,40 @@ public sealed class Listener : IDisposable, IMMNotificationClient
             || System.Text.RegularExpressions.Regex.IsMatch(s, @"^(u+h+|e+h+|h+m+|m+|a+h+|ø+h*|e+)[\s.,!?]*$");
     }
 
+    private static float Peak(float[] samples)
+    {
+        float peak = 0;
+        foreach (float s in samples) peak = Math.Max(peak, Math.Abs(s));
+        return peak;
+    }
+
+    /// <summary>A quiet headset mic costs Whisper accuracy. Evening out the level takes well under a millisecond.</summary>
+    private static float[] Louder(float[] samples, float peak)
+    {
+        if (peak >= QuietPeak || peak < 0.005f) return samples;
+        float gain = Math.Min(TargetPeak / peak, MaxGain);
+        var louder = new float[samples.Length];
+        for (int i = 0; i < samples.Length; i++) louder[i] = samples[i] * gain;
+        return louder;
+    }
+
     private async Task<(string text, string lang)> Transcribe(float[] samples)
     {
         if (_factory is null) return ("", LastLanguage);
         // Pinning the language on every clip matters: free detection reads a short "ja" as German.
-        string lang = PreferredLanguage ?? "auto";
+        var (text, found) = await Run(PreferredLanguage ?? "auto", samples);
+        // The pilot talks English or Norwegian. Swedish or anything else is the detector being wrong on a short clip, and the
+        // words were written in that language too, so only those clips go again, as Norwegian.
+        if (found is not ("en" or "no" or "nb" or "nn"))
+            (text, found) = await Run("no", samples);
+        return (text, found is "nb" or "nn" ? "no" : found);
+    }
+
+    private async Task<(string text, string lang)> Run(string lang, float[] samples)
+    {
         if (!_processors.TryGetValue(lang, out var proc))
         {
-            proc = _factory.CreateBuilder().WithLanguage(lang).WithPrompt(_prompt).WithNoSpeechThreshold(0.6f).Build();
+            proc = _factory!.CreateBuilder().WithLanguage(lang).WithPrompt(Prompt).WithNoSpeechThreshold(0.6f).Build();
             _processors[lang] = proc;
         }
         var sb = new StringBuilder();
@@ -270,9 +299,6 @@ public sealed class Listener : IDisposable, IMMNotificationClient
             sb.Append(seg.Text);
             if (lang == "auto" && !string.IsNullOrEmpty(seg.Language)) found = seg.Language;
         }
-        // The pilot flies in English or Norwegian. Anything else is a detector mistake on a short clip.
-        if (found is not ("en" or "no" or "nb" or "nn")) found = LastLanguage;
-        if (found is "nb" or "nn") found = "no";
         return (sb.ToString().Trim(), found);
     }
 

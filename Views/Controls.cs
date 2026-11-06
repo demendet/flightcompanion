@@ -3,10 +3,12 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using System.Linq;
 using System.Net.Http;
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Threading;
@@ -111,24 +113,43 @@ public sealed class EnvelopeChart : Control
     }
 }
 
-/// <summary>A real map of Finnmark, from cached OpenStreetMap tiles, dimmed for night use.</summary>
-public sealed class TileMap : Control
+/// <summary>
+/// The real map of Finnmark. Fits the route by itself until you touch it: the wheel zooms, dragging moves, the buttons in the
+/// corner zoom and follow the aircraft. Shows the route with distance and time per leg, how far the fuel reaches, your track so
+/// far, runways, and real named places when zoomed in. Dimmed for night use.
+/// </summary>
+public sealed class TileMap : Control, Avalonia.Rendering.ICustomHitTest
 {
     public static readonly StyledProperty<MapData?> DataProperty = AvaloniaProperty.Register<TileMap, MapData?>(nameof(Data));
+    public static readonly StyledProperty<PlanePos?> PlaneProperty = AvaloniaProperty.Register<TileMap, PlanePos?>(nameof(Plane));
     public MapData? Data { get => GetValue(DataProperty); set => SetValue(DataProperty, value); }
-    static TileMap() => AffectsRender<TileMap>(DataProperty);
+    public PlanePos? Plane { get => GetValue(PlaneProperty); set => SetValue(PlaneProperty, value); }
+    static TileMap() => AffectsRender<TileMap>(DataProperty, PlaneProperty);
 
-    private const int TileSize = 256;
-    private const double CenterLat = 69.75, CenterLon = 25.2;
+    private const int TileSize = 256, MinZoom = 5, MaxZoom = 13;
     private static readonly HttpClient Http = MakeHttp();
     private static readonly ConcurrentDictionary<(int, int, int), Bitmap?> Tiles = new();
     private static readonly Typeface Face = new("Bahnschrift, Inter");
     private static readonly IBrush Water = new SolidColorBrush(Color.Parse("#14262A"));
-    private static readonly IBrush Dim = new SolidColorBrush(Color.Parse("#0F1D1C"), 0.62);
-    private static readonly IBrush Snow = new SolidColorBrush(Color.Parse("#E6EEE9"));
-    private static readonly IBrush Lichen = new SolidColorBrush(Color.Parse("#A9C4BC"));
+    private static readonly IBrush Dim = new SolidColorBrush(Color.Parse("#0F1D1C"), 0.42);
+    private static readonly IBrush Snow = new SolidColorBrush(Color.Parse("#F4F8F5"));
+    private static readonly IBrush Lichen = new SolidColorBrush(Color.Parse("#C4DAD3"));
     private static readonly IBrush Sign = new SolidColorBrush(Color.Parse("#F4C430"));
-    private static readonly Pen Route = new(new SolidColorBrush(Color.Parse("#F4C430")), 2, new DashStyle([4, 3], 0));
+    private static readonly IBrush Halo = new SolidColorBrush(Color.Parse("#0B1716"), 0.72);
+    private static readonly IBrush ButtonBack = new SolidColorBrush(Color.Parse("#1F3A36"), 0.94);
+    private static readonly Pen RoutePen = new(new SolidColorBrush(Color.Parse("#F4C430")), 2.4, new DashStyle([5, 3], 0));
+    private static readonly Pen NavPen = new(new SolidColorBrush(Color.Parse("#F4F8F5")), 2.2);
+    private static readonly Pen TrailPen = new(new SolidColorBrush(Color.Parse("#7FCB8F")), 2);
+    private static readonly Pen ReachPen = new(new SolidColorBrush(Color.Parse("#7FCB8F"), 0.8), 1.4, new DashStyle([3, 4], 0));
+    private static readonly Pen Outline = new(Brushes.Black, 1);
+
+    private int _zoom = 7;
+    private double _cLat = 69.75, _cLon = 25.2;
+    private bool _userMoved, _follow;
+    private string _fittedFor = "";
+    private Point? _dragFrom;
+    private double _dragLat, _dragLon;
+    private readonly List<Rect> _taken = [];
 
     private static HttpClient MakeHttp()
     {
@@ -136,6 +157,8 @@ public sealed class TileMap : Control
         h.DefaultRequestHeaders.UserAgent.ParseAdd("FlightCompanion/1.0");
         return h;
     }
+
+    public bool HitTest(Point point) => true;
 
     private static Point World(double lat, double lon, int zoom)
     {
@@ -146,62 +169,266 @@ public sealed class TileMap : Control
         return new Point(x, y);
     }
 
+    private static (double lat, double lon) Unworld(Point p, int zoom)
+    {
+        double n = TileSize * Math.Pow(2, zoom);
+        double lon = p.X / n * 360 - 180;
+        double lat = Math.Atan(Math.Sinh(Math.PI * (1 - 2 * p.Y / n))) * 180 / Math.PI;
+        return (lat, lon);
+    }
+
+    private Rect ZoomInBox => new(Bounds.Width - 38, 8, 30, 30);
+    private Rect ZoomOutBox => new(Bounds.Width - 38, 42, 30, 30);
+    private Rect FollowBox => new(Bounds.Width - 38, 76, 30, 30);
+    private Rect FitBox => new(Bounds.Width - 38, 110, 30, 30);
+
+    protected override void OnPointerPressed(PointerPressedEventArgs e)
+    {
+        base.OnPointerPressed(e);
+        var at = e.GetPosition(this);
+        if (ZoomInBox.Contains(at)) { SetZoom(_zoom + 1); e.Handled = true; return; }
+        if (ZoomOutBox.Contains(at)) { SetZoom(_zoom - 1); e.Handled = true; return; }
+        if (FollowBox.Contains(at)) { _follow = !_follow; _userMoved = true; InvalidateVisual(); e.Handled = true; return; }
+        if (FitBox.Contains(at)) { _follow = false; _userMoved = false; _fittedFor = ""; InvalidateVisual(); e.Handled = true; return; }
+        _dragFrom = at;
+        _dragLat = _cLat;
+        _dragLon = _cLon;
+        e.Pointer.Capture(this);
+    }
+
+    protected override void OnPointerMoved(PointerEventArgs e)
+    {
+        base.OnPointerMoved(e);
+        if (_dragFrom is not { } from) return;
+        var now = e.GetPosition(this);
+        var c = World(_dragLat, _dragLon, _zoom);
+        (_cLat, _cLon) = Unworld(new Point(c.X - (now.X - from.X), c.Y - (now.Y - from.Y)), _zoom);
+        _userMoved = true;
+        _follow = false;
+        InvalidateVisual();
+    }
+
+    protected override void OnPointerReleased(PointerReleasedEventArgs e)
+    {
+        base.OnPointerReleased(e);
+        _dragFrom = null;
+        e.Pointer.Capture(null);
+    }
+
+    protected override void OnPointerWheelChanged(PointerWheelEventArgs e)
+    {
+        base.OnPointerWheelChanged(e);
+        SetZoom(_zoom + (e.Delta.Y > 0 ? 1 : -1));
+        e.Handled = true;
+    }
+
+    private void SetZoom(int zoom)
+    {
+        _zoom = Math.Clamp(zoom, MinZoom, MaxZoom);
+        _userMoved = true;
+        InvalidateVisual();
+    }
+
+    /// <summary>Until you touch the map, it shows the whole route and the aircraft.</summary>
+    private void FitToRoute(MapData d, double w, double h)
+    {
+        var lats = new List<double>();
+        var lons = new List<double>();
+        void Add(double la, double lo) { lats.Add(la); lons.Add(lo); }
+        if (d.From is { } a) Add(a.Lat, a.Lon);
+        if (d.To is { } b) Add(b.Lat, b.Lon);
+        foreach (var s in d.Stops) Add(s.Lat, s.Lon);
+        if (Plane is { } p) Add(p.Lat, p.Lon);
+        if (lats.Count == 0) { _cLat = 69.75; _cLon = 25.2; _zoom = 7; return; }
+        _cLat = (lats.Min() + lats.Max()) / 2;
+        _cLon = (lons.Min() + lons.Max()) / 2;
+        for (int z = 11; z >= MinZoom; z--)
+        {
+            var lo = World(lats.Max(), lons.Min(), z);
+            var hi = World(lats.Min(), lons.Max(), z);
+            if (hi.X - lo.X < w * 0.72 && hi.Y - lo.Y < h * 0.66) { _zoom = z; return; }
+        }
+        _zoom = MinZoom;
+    }
+
     public override void Render(DrawingContext ctx)
     {
         double w = Bounds.Width, h = Bounds.Height;
         ctx.FillRectangle(Water, new Rect(0, 0, w, h));
         var d = Data;
-        double cLat = CenterLat, cLon = CenterLon;
-        int zoom = 7;
-        if (d?.From is { } a && d.To is { } b)
+        var plane = Plane;
+        if (d is not null && !_userMoved)
         {
-            cLat = (a.Lat + b.Lat) / 2;
-            cLon = (a.Lon + b.Lon) / 2;
-            double nm = Geo.DistanceNm(a.Lat, a.Lon, b.Lat, b.Lon);
-            zoom = nm < 30 ? 8 : nm < 95 ? 7 : 6;
+            string key = $"{d.From?.Id}|{d.To?.Id}|{d.Stops.Count}|{plane is not null}";
+            if (key != _fittedFor) { _fittedFor = key; FitToRoute(d, w, h); }
         }
-        var center = World(cLat, cLon, zoom);
-        Point W(double lat, double lon) => World(lat, lon, zoom);
-        Point S(Point p) => new(p.X - center.X + w / 2, p.Y - center.Y + h / 2);
+        if (_follow && plane is not null) { _cLat = plane.Lat; _cLon = plane.Lon; }
+
+        int zoom = _zoom;
+        var center = World(_cLat, _cLon, zoom);
+        Point Sc(double lat, double lon)
+        {
+            var p = World(lat, lon, zoom);
+            return new Point(p.X - center.X + w / 2, p.Y - center.Y + h / 2);
+        }
 
         int x0 = (int)Math.Floor((center.X - w / 2) / TileSize), x1 = (int)Math.Floor((center.X + w / 2) / TileSize);
         int y0 = (int)Math.Floor((center.Y - h / 2) / TileSize), y1 = (int)Math.Floor((center.Y + h / 2) / TileSize);
+        int max = 1 << zoom;
         for (int x = x0; x <= x1; x++)
             for (int y = y0; y <= y1; y++)
-                if (GetTile(zoom, x, y) is { } bmp)
-                {
-                    var at = S(new Point(x * TileSize, y * TileSize));
-                    ctx.DrawImage(bmp, new Rect(at.X, at.Y, TileSize, TileSize));
-                }
+                if (y >= 0 && y < max && x >= 0 && x < max && GetTile(zoom, x, y) is { } bmp)
+                    ctx.DrawImage(bmp, new Rect(x * TileSize - center.X + w / 2, y * TileSize - center.Y + h / 2, TileSize, TileSize));
         ctx.FillRectangle(Dim, new Rect(0, 0, w, h));
+        _taken.Clear();
 
-        if (d is null) return;
-        if (d.From is { } from && d.To is { } to && from.Id != to.Id)
-            ctx.DrawLine(Route, S(W(from.Lat, from.Lon)), S(W(to.Lat, to.Lon)));
-        foreach (var p in d.Places)
+        double metresPerPixel = 40075016.686 * Math.Cos(_cLat * Math.PI / 180) / (TileSize * Math.Pow(2, zoom));
+
+        if (plane is { ReachNm: > 2 } ring)
         {
-            var at = S(W(p.Lat, p.Lon));
-            bool onRoute = p.Name == d.From?.Name || p.Name == d.To?.Name;
-            ctx.DrawEllipse(onRoute ? Sign : Lichen, null, at, onRoute ? 4.5 : 3, onRoute ? 4.5 : 3);
-            var t = new FormattedText(p.Name, CultureInfo.InvariantCulture, FlowDirection.LeftToRight, Face, onRoute ? 13 : 11.5, onRoute ? Snow : Lichen);
-            ctx.DrawText(t, new Point(p.LabelLeft ? at.X - t.Width - 7 : at.X + 7, at.Y - 8));
+            double radius = ring.ReachNm * 1852 / metresPerPixel;
+            ctx.DrawEllipse(null, ReachPen, Sc(ring.Lat, ring.Lon), radius, radius);
         }
-        if (d.PlaneLat is { } lat && d.PlaneLon is { } lon)
+        if (plane?.Trail is { Count: > 1 } trail)
+            for (int i = 1; i < trail.Count; i++)
+                ctx.DrawLine(TrailPen, Sc(trail[i - 1].Lat, trail[i - 1].Lon), Sc(trail[i].Lat, trail[i].Lon));
+
+        if (d is not null)
         {
-            var at = S(W(lat, lon));
-            double r = d.PlaneHeading * Math.PI / 180;
+            var points = new List<(double Lat, double Lon)>();
+            if (d.From is { } from) points.Add((from.Lat, from.Lon));
+            foreach (var s in d.Stops) points.Add((s.Lat, s.Lon));
+            if (d.To is { } to && (points.Count == 0 || d.Stops.Count > 0 || d.From?.Id != to.Id)) points.Add((to.Lat, to.Lon));
+            for (int i = 1; i < points.Count; i++)
+            {
+                var a = Sc(points[i - 1].Lat, points[i - 1].Lon);
+                var b = Sc(points[i].Lat, points[i].Lon);
+                ctx.DrawLine(RoutePen, a, b);
+                double nm = Geo.DistanceNm(points[i - 1].Lat, points[i - 1].Lon, points[i].Lat, points[i].Lon);
+                if (Math.Abs(a.X - b.X) + Math.Abs(a.Y - b.Y) > 90)
+                    Text(ctx, $"{nm:0} nm, {nm / Math.Max(60, d.CruiseKt) * 60:0} min", new Point((a.X + b.X) / 2 + 6, (a.Y + b.Y) / 2 - 8), Sign, 12, true);
+            }
+
+            foreach (var p in d.Places)
+            {
+                var at = Sc(p.Lat, p.Lon);
+                if (!OnScreen(at, w, h)) continue;
+                bool onRoute = p.Name == d.From?.Name || p.Name == d.To?.Name;
+                double s = onRoute ? 5.5 : p.Airport ? 4.5 : 3.5;
+                var fill = onRoute ? Sign : p.Airport ? Snow : Lichen;
+                if (p.Airport) ctx.DrawRectangle(fill, Outline, new Rect(at.X - s, at.Y - s, s * 2, s * 2));
+                else ctx.DrawEllipse(fill, Outline, at, s, s);
+                string label = zoom >= 7 ? $"{p.Name}, {p.RunwayM:0} m{(p.HasFuel ? ", " + Game.L.T("fuel") : "")}" : p.Name;
+                var size = Measure(label, onRoute ? 13 : 12);
+                double x = p.LabelLeft ? at.X - size.Width - s - 3 : at.X + s + 3;
+                Text(ctx, label, new Point(x, at.Y - 9), onRoute ? Snow : Lichen, onRoute ? 13 : 12, true);
+            }
+
+            if (zoom >= 9)
+                foreach (var k in d.Known)
+                {
+                    var at = Sc(k.Lat, k.Lon);
+                    if (!OnScreen(at, w, h)) continue;
+                    ctx.DrawEllipse(Lichen, null, at, 1.6, 1.6);
+                    Text(ctx, k.Name, new Point(at.X + 4, at.Y - 7), Lichen, 11, false);
+                }
+            if (zoom >= 8)
+                foreach (var k in d.Sights)
+                {
+                    var at = Sc(k.Lat, k.Lon);
+                    if (!OnScreen(at, w, h)) continue;
+                    ctx.DrawEllipse(Lichen, Outline, at, 2.6, 2.6);
+                    Text(ctx, k.Name, new Point(at.X + 5, at.Y - 7), Snow, 11.5, false);
+                }
+
+            foreach (var stop in d.Stops)
+            {
+                var at = Sc(stop.Lat, stop.Lon);
+                var g = new StreamGeometry();
+                using (var c = g.Open())
+                {
+                    c.BeginFigure(new Point(at.X, at.Y - 8), true);
+                    c.LineTo(new Point(at.X + 8, at.Y));
+                    c.LineTo(new Point(at.X, at.Y + 8));
+                    c.LineTo(new Point(at.X - 8, at.Y));
+                    c.EndFigure(true);
+                }
+                ctx.DrawGeometry(stop.Seen ? Lichen : Sign, Outline, g);
+                Text(ctx, stop.Name, new Point(at.X + 11, at.Y - 9), stop.Seen ? Lichen : Sign, 13, true);
+            }
+
+        }
+
+        if (plane is not null)
+        {
+            var at = Sc(plane.Lat, plane.Lon);
+            if (plane.NavLat is { } nla && plane.NavLon is { } nlo) ctx.DrawLine(NavPen, at, Sc(nla, nlo));
+            double r = plane.Heading * Math.PI / 180;
             Point Rot(double dx, double dy) => new(at.X + dx * Math.Cos(r) - dy * Math.Sin(r), at.Y + dx * Math.Sin(r) + dy * Math.Cos(r));
             var g = new StreamGeometry();
             using (var c = g.Open())
             {
-                c.BeginFigure(Rot(0, -9), true);
-                c.LineTo(Rot(6, 7));
-                c.LineTo(Rot(0, 3));
-                c.LineTo(Rot(-6, 7));
+                c.BeginFigure(Rot(0, -12), true);
+                c.LineTo(Rot(2, -3));
+                c.LineTo(Rot(11, 3));
+                c.LineTo(Rot(2, 2));
+                c.LineTo(Rot(1.5, 8));
+                c.LineTo(Rot(5, 11));
+                c.LineTo(Rot(-5, 11));
+                c.LineTo(Rot(-1.5, 8));
+                c.LineTo(Rot(-2, 2));
+                c.LineTo(Rot(-11, 3));
+                c.LineTo(Rot(-2, -3));
                 c.EndFigure(true);
             }
-            ctx.DrawGeometry(Snow, new Pen(Brushes.Black, 1), g);
+            ctx.DrawGeometry(Snow, Outline, g);
         }
+
+        DrawScale(ctx, metresPerPixel, h);
+        Button(ctx, ZoomInBox, "+", false);
+        Button(ctx, ZoomOutBox, "-", false);
+        Button(ctx, FollowBox, "F", _follow);
+        Button(ctx, FitBox, "R", !_userMoved);
+        var credit = new FormattedText("© OpenStreetMap", CultureInfo.InvariantCulture, FlowDirection.LeftToRight, Face, 10, Lichen);
+        ctx.FillRectangle(Halo, new Rect(w - credit.Width - 8, h - 16, credit.Width + 8, 16));
+        ctx.DrawText(credit, new Point(w - credit.Width - 4, h - 15));
+    }
+
+    private static bool OnScreen(Point p, double w, double h) => p.X > -20 && p.Y > -20 && p.X < w + 20 && p.Y < h + 20;
+
+    private static Size Measure(string text, double size)
+    {
+        var f = new FormattedText(text, CultureInfo.InvariantCulture, FlowDirection.LeftToRight, Face, size, Snow);
+        return new Size(f.Width, f.Height);
+    }
+
+    /// <summary>Text with a dark backing so it reads on any part of the map. Labels that would land on another are skipped, unless they matter.</summary>
+    private void Text(DrawingContext ctx, string text, Point at, IBrush brush, double size, bool always)
+    {
+        var f = new FormattedText(text, CultureInfo.InvariantCulture, FlowDirection.LeftToRight, Face, size, brush);
+        var box = new Rect(at.X - 2, at.Y, f.Width + 4, f.Height);
+        if (!always && _taken.Any(t => t.Intersects(box))) return;
+        _taken.Add(box);
+        ctx.FillRectangle(Halo, box);
+        ctx.DrawText(f, at);
+    }
+
+    private void Button(DrawingContext ctx, Rect box, string label, bool active)
+    {
+        ctx.FillRectangle(active ? Sign : ButtonBack, box);
+        var f = new FormattedText(label, CultureInfo.InvariantCulture, FlowDirection.LeftToRight, Face, 16, active ? Brushes.Black : Snow);
+        ctx.DrawText(f, new Point(box.X + (box.Width - f.Width) / 2, box.Y + (box.Height - f.Height) / 2));
+    }
+
+    private void DrawScale(DrawingContext ctx, double metresPerPixel, double h)
+    {
+        double[] options = [1, 2, 5, 10, 20, 50, 100];
+        double nm = options.FirstOrDefault(o => o * 1852 / metresPerPixel > 60, 100);
+        double px = nm * 1852 / metresPerPixel;
+        ctx.FillRectangle(Halo, new Rect(8, h - 26, px + 12, 20));
+        ctx.DrawLine(new Pen(Snow, 2), new Point(14, h - 10), new Point(14 + px, h - 10));
+        var f = new FormattedText($"{nm:0} nm", CultureInfo.InvariantCulture, FlowDirection.LeftToRight, Face, 11, Snow);
+        ctx.DrawText(f, new Point(14, h - 25));
     }
 
     private Bitmap? GetTile(int zoom, int x, int y)

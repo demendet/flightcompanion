@@ -29,6 +29,8 @@ public sealed record Telemetry
     public double WindFromDeg { get; init; }
     public double WindKt { get; init; }
     public double OatC { get; init; }
+    /// <summary>East is positive. True course minus this is the magnetic course the compass shows.</summary>
+    public double MagVarDeg { get; init; }
     public double TouchdownFpm { get; init; }
     public string Title { get; init; } = "";
 }

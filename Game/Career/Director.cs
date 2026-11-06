@@ -47,7 +47,7 @@ public sealed class Director(CareerState state, Random rng)
             if (minutesLate > 150)
             {
                 m.Phase = MissionPhase.NoShow;
-                caller.Trust = Math.Clamp(caller.Trust - 35, -100, 100);
+                caller.Note(now, L.F("You never came to {0}", m.Pickup?.Name), -35);
                 caller.Memories.Add(new MemoryNote(now, "The pilot never turned up at all, you had to make other arrangements."));
                 state.Reputation = Math.Clamp(state.Reputation - 4, 0, 100);
                 return new TextMessage(caller, L.F("We waited two and a half hours at {0}. We found another way. Do not call me.", m.Pickup?.Name));

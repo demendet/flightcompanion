@@ -28,14 +28,14 @@ public static class FuelAdvisor
         double toPickup = !flying && m.Phase is MissionPhase.Booked or MissionPhase.Negotiating or MissionPhase.Ringing && lat is { } la && lon is { } lo
             ? Math.Max(0, Geo.DistanceNm(la, lo, from.Lat, from.Lon)) : 0;
         if (toPickup < SameSpotNm) toPickup = 0;
-        double trip = Geo.DistanceNm(from.Lat, from.Lon, to.Lat, to.Lon);
+        double trip = m.RouteNm();
         bool night = m.Plan.PickupTime is { } t && Sun.IsDark(t, from.Lat, from.Lon);
         double extra = m.Sightseeing ? 30 : 0;
 
         // Each landing and new takeoff is its own bit of climbing, taxiing and circuit, which is why these are separate legs.
         var pickup = FuelPlanner.Plan(a, toPickup, 0, night);
         var main = FuelPlanner.Plan(a, trip, headwindKt, night, extra);
-        var back = FuelPlanner.Plan(a, trip, -headwindKt, night);
+        var back = FuelPlanner.Plan(a, Geo.DistanceNm(from.Lat, from.Lon, to.Lat, to.Lon), -headwindKt, night);
 
         double positioning = toPickup > 0 ? pickup.TripGal + pickup.TaxiGal : 0;
         double oneWay = positioning + main.TripGal + main.TaxiGal + main.ReserveGal;

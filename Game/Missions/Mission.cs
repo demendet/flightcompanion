@@ -22,6 +22,16 @@ public static class PlanDefaults
     public const double PassengerKg = 84;
 }
 
+/// <summary>A real place the customer wants to see from the air.</summary>
+public sealed class TourStop
+{
+    public string Name { get; set; } = "";
+    public double Lat { get; set; }
+    public double Lon { get; set; }
+    public string Note { get; set; } = "";
+    public bool Seen { get; set; }
+}
+
 public sealed record PlanChange(DateTimeOffset When, string Field, string From, string To);
 
 /// <summary>What the pilot and the customer currently believe. Differs from <see cref="MissionTruth"/> until someone checks.</summary>
@@ -84,6 +94,8 @@ public sealed class Mission
     public List<string> SecretsForCaller { get; set; } = [];
     public bool Urgent { get; set; }
     public bool Sightseeing { get; set; }
+    public List<TourStop> Stops { get; set; } = [];
+    public bool PilotOffended { get; set; }
     public string? ArcId { get; set; }
     public int ArcEpisode { get; set; }
     public string? FollowUpOf { get; set; }
@@ -100,10 +112,26 @@ public sealed class Mission
     public bool WentOverweight { get; set; }
     public double LoadedOverGrossLb { get; set; }
     public bool ReminderSent { get; set; }
+    /// <summary>How far the pilot has pushed the pickup back in all.</summary>
+    public double DelayedMinutes { get; set; }
     public bool LateCallMade { get; set; }
     public FlightScore Score { get; set; } = new();
     public FlightReview? Review { get; set; }
     public List<string> Transcript { get; set; } = [];
+
+    /// <summary>The whole way from pickup, over everything they want to see, to the dropoff.</summary>
+    public double RouteNm()
+    {
+        if (Pickup is not { } from || Dropoff is not { } to) return 0;
+        double nm = 0, lat = from.Lat, lon = from.Lon;
+        foreach (var s in Stops)
+        {
+            nm += Geo.DistanceNm(lat, lon, s.Lat, s.Lon);
+            lat = s.Lat;
+            lon = s.Lon;
+        }
+        return nm + Geo.DistanceNm(lat, lon, to.Lat, to.Lon);
+    }
 
     public Place? Pickup => WorldData.ById(Plan.PickupId);
     public Place? Dropoff => WorldData.ById(Plan.DropoffId);
@@ -154,7 +182,7 @@ public static class PlanEvaluator
         double headwindKt = 0, double oatC = 5, double? fuelOverrideGal = null)
     {
         var from = m.Pickup; var to = m.Dropoff;
-        double nm = from is not null && to is not null ? Geo.DistanceNm(from.Lat, from.Lon, to.Lat, to.Lon) : 0;
+        double nm = m.RouteNm();
         bool night = from is not null && m.Plan.PickupTime is { } t && Sun.IsDark(t, from.Lat, from.Lon);
         var fuel = FuelPlanner.Plan(a, nm, headwindKt, night, m.Sightseeing ? 30 : 0);
         double fuelGal = fuelOverrideGal ?? m.Plan.FuelGal ?? Math.Min(a.UsableFuelGal, Math.Ceiling(fuel.RequiredGal));

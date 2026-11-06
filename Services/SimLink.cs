@@ -14,6 +14,8 @@ namespace FlightCompanion.Services;
 /// The only place that talks to the sim. Runs on its own thread with a wait handle, reconnects by itself, and stays
 /// useful when the sim is not running, since the game keeps its clock and its phone either way.
 /// </summary>
+internal enum SimEvent { Crashed = 900 }
+
 public sealed class SimLink : IDisposable
 {
     private enum Def { Flight = 1, Avatar, Touchdown, Count, Tanks, StationBase = 100, WriteBase = 1000 }
@@ -23,7 +25,7 @@ public sealed class SimLink : IDisposable
     private struct FlightData
     {
         public double Lat, Lon, Alt, Agl, Gs, Ias, Vs, Pitch, Bank, Heading, G, OnGround, Brake, Combustion, Stall, Overspeed;
-        public double FuelGal, TotalLb, CgPercent, WindDir, WindKt, Oat;
+        public double FuelGal, TotalLb, CgPercent, WindDir, WindKt, Oat, MagVar;
         [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 256)] public string Title;
     }
 
@@ -67,6 +69,8 @@ public sealed class SimLink : IDisposable
     private uint _nextSpawnReq = (uint)Req.SpawnBase, _nextRemoveReq = (uint)Req.RemoveBase;
 
     public event Action<Telemetry>? Sample;
+    /// <summary>The sim's own crash detection went off.</summary>
+    public event Action? Crashed;
     public event Action<Health>? HealthChanged;
 
     public bool Connected => _connected;
@@ -112,6 +116,8 @@ public sealed class SimLink : IDisposable
             var sc = new SimConnect("FlightCompanion", IntPtr.Zero, 0, _signal, 0);
             sc.OnRecvOpen += OnOpen;
             sc.OnRecvQuit += (_, _) => Drop();
+            sc.OnRecvEvent += (_, e) => { if (e.uEventID == (uint)SimEvent.Crashed) Crashed?.Invoke(); };
+            sc.SubscribeToSystemEvent(SimEvent.Crashed, "Crashed");
             sc.OnRecvException += (_, d) => Log.Info("Sim", $"SimConnect exception {(SIMCONNECT_EXCEPTION)d.dwException} on send {d.dwSendID}, index {d.dwIndex}");
             sc.OnRecvSimobjectData += OnData;
             sc.OnRecvAssignedObjectId += OnAssigned;
@@ -150,6 +156,7 @@ public sealed class SimLink : IDisposable
         Add(Def.Flight, "AMBIENT WIND DIRECTION", "degrees");
         Add(Def.Flight, "AMBIENT WIND VELOCITY", "knots");
         Add(Def.Flight, "AMBIENT TEMPERATURE", "celsius");
+        Add(Def.Flight, "MAGVAR", "degrees");
         Add(Def.Flight, "TITLE", null, SIMCONNECT_DATATYPE.STRING256);
         sc.RegisterDataDefineStruct<FlightData>(Def.Flight);
 
@@ -221,7 +228,7 @@ public sealed class SimLink : IDisposable
                 Lat = f.Lat, Lon = f.Lon, AltFt = f.Alt, AglFt = f.Agl, GroundSpeedKt = f.Gs, IasKt = f.Ias, VerticalFpm = f.Vs,
                 PitchDeg = -f.Pitch, BankDeg = f.Bank, HeadingTrue = f.Heading, GForce = f.G, OnGround = f.OnGround != 0,
                 ParkingBrake = f.Brake != 0, EngineRunning = f.Combustion != 0, StallWarning = f.Stall != 0, OverspeedWarning = f.Overspeed != 0,
-                FuelGal = f.FuelGal, TotalWeightLb = f.TotalLb, CgPercent = f.CgPercent, WindFromDeg = f.WindDir, WindKt = f.WindKt, OatC = f.Oat,
+                FuelGal = f.FuelGal, TotalWeightLb = f.TotalLb, CgPercent = f.CgPercent, WindFromDeg = f.WindDir, WindKt = f.WindKt, OatC = f.Oat, MagVarDeg = f.MagVar,
                 OnFoot = _onFoot, TouchdownFpm = _touchdownFpm, Title = f.Title ?? "",
             });
         }

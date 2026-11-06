@@ -11,6 +11,7 @@ public sealed record PeopleShouldDisappear(Mission Mission) : FlowEvent;
 public sealed record ArrivedAtPickup(Mission Mission, double LateMinutes) : FlowEvent;
 public sealed record CanMeetInPerson(Mission Mission) : FlowEvent;
 public sealed record MissionAirborne(Mission Mission) : FlowEvent;
+public sealed record StopReached(Mission Mission, TourStop Stop) : FlowEvent;
 public sealed record MissionLanded(Mission Mission, bool AtDestination) : FlowEvent;
 public sealed record ReadyToDeplane(Mission Mission) : FlowEvent;
 public sealed record LoadChanged(double[] StationLb) : FlowEvent;
@@ -18,7 +19,7 @@ public sealed record LoadChanged(double[] StationLb) : FlowEvent;
 /// <summary>Drives one active mission from the sim's telemetry. Pure logic: same input, same result, so it can be tested without flying.</summary>
 public sealed class MissionFlow(CareerState state)
 {
-    private const double SpawnKm = 6, ArriveM = 450, AirportArriveM = 2500, MeetM = 60;
+    private const double StopM = 5000, SpawnKm = 6, ArriveM = 450, AirportArriveM = 2500, MeetM = 60;
     private bool _peopleVisible;
     private string? _peopleFor;
     private bool _meetAnnounced;
@@ -121,6 +122,12 @@ public sealed class MissionFlow(CareerState state)
                 break;
             case MissionPhase.Airborne:
             {
+                foreach (var stop in m.Stops.Where(x => !x.Seen))
+                    if (Geo.DistanceM(t.Lat, t.Lon, stop.Lat, stop.Lon) < StopM)
+                    {
+                        stop.Seen = true;
+                        events.Add(new StopReached(m, stop));
+                    }
                 var s = m.Score;
                 s.ComfortMin = Math.Min(s.ComfortMin, comfort);
                 s.ComfortAvgSum += comfort;

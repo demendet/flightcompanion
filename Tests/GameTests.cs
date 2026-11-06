@@ -387,6 +387,344 @@ public class CareerTests
     }
 }
 
+public class PanicTests
+{
+    private static readonly DateTimeOffset T0 = new(2026, 11, 6, 12, 0, 0, TimeSpan.Zero);
+    private static Telemetry Fly(double seconds, double bank = 0, double fpm = 0, double agl = 3000, double pitch = 0, double g = 1, bool ground = false)
+        => new() { Time = T0.AddSeconds(seconds), BankDeg = bank, VerticalFpm = fpm, AglFt = agl, PitchDeg = pitch, GForce = g, OnGround = ground };
+
+    [Fact]
+    public void Normal_flying_never_sets_anyone_off()
+    {
+        var w = new PanicWatcher();
+        // Takeoff, a 45 degree turn, a brisk descent, a normal approach and landing.
+        Assert.Equal(PanicChange.None, w.Step(Fly(0, ground: true, agl: 0)));
+        Assert.Equal(PanicChange.None, w.Step(Fly(1, fpm: 800, agl: 200)));
+        Assert.Equal(PanicChange.None, w.Step(Fly(2, bank: 45)));
+        Assert.Equal(PanicChange.None, w.Step(Fly(3, fpm: -1000, agl: 2500)));
+        Assert.Equal(PanicChange.None, w.Step(Fly(4, fpm: -600, agl: 100)));
+        Assert.Equal(PanicChange.None, w.Step(Fly(5, fpm: -300, agl: 5)));
+        Assert.Equal(PanicChange.None, w.Step(Fly(6, ground: true, agl: 0)));
+        Assert.False(w.Panicking);
+    }
+
+    [Fact]
+    public void Past_the_bank_limit_for_a_moment_starts_it_and_calm_flying_ends_it()
+    {
+        var w = new PanicWatcher();
+        Assert.Equal(PanicChange.None, w.Step(Fly(0, bank: 63)));   // a gust is not enough
+        Assert.Equal(PanicChange.Began, w.Step(Fly(0.7, bank: 63)));
+        Assert.Equal(PanicChange.None, w.Step(Fly(1.5, bank: 20)));
+        Assert.Equal(PanicChange.None, w.Step(Fly(3, bank: 5)));
+        Assert.Equal(PanicChange.Ended, w.Step(Fly(4, bank: 5)));
+    }
+
+    [Theory]
+    [InlineData(0, -3000, 3000, 0, 1)]    // a real dive
+    [InlineData(0, 0, 3000, -50, 1)]      // nose straight down
+    [InlineData(0, 0, 3000, 0, 7)]        // the 7 G from the real flight
+    public void Losing_control_starts_it(double bank, double fpm, double agl, double pitch, double g)
+    {
+        var w = new PanicWatcher();
+        w.Step(Fly(0, bank, fpm, agl, pitch, g));
+        Assert.Equal(PanicChange.Began, w.Step(Fly(1, bank, fpm, agl, pitch, g)));
+    }
+
+    [Fact]
+    public void The_ground_coming_up_starts_it_at_once_and_hitting_it_is_a_crash()
+    {
+        var w = new PanicWatcher();
+        Assert.Equal(PanicChange.Began, w.Step(Fly(0, fpm: -1800, agl: 300)));
+        Assert.Equal(PanicChange.Crashed, w.Step(Fly(1, ground: true, agl: 0)));
+    }
+
+    [Fact]
+    public void The_direction_in_brackets_is_only_at_the_start_of_each_line()
+    {
+        foreach (var line in ReactionLines.PanicNo.Concat(ReactionLines.PanicEn))
+        {
+            Assert.StartsWith("[", line);
+            Assert.Equal(1, line.Count(c => c == '['));
+        }
+    }
+
+    [Fact]
+    public void The_clone_voice_speaks_plain_bokmal_even_for_a_Sami_character()
+    {
+        var mathis = new Person { Name = "Mathis Guttorm", Home = "Sápmi", Language = "no", SpeaksNorwegian = true };
+        string plain = Prompts.Speaker(mathis, null, new CareerState(), TalkMode.Phone, null, "no", Dialect.Unknown);
+        Assert.Contains("No dialect spelling", plain);
+        Assert.DoesNotContain("giitu", plain);
+        Assert.Equal("Jeg vil ikke dø", Dialects.Adapt("Jeg vil ikke dø", Dialect.Unknown));
+        Assert.Contains("giitu", Prompts.Speaker(mathis, null, new CareerState(), TalkMode.Phone, null, "no", Dialect.Northern));
+    }
+
+    [Fact]
+    public void Everyone_on_board_knows_when_the_aircraft_is_about_to_land()
+    {
+        Assert.Contains("right now", Prompts.LandingNote("Lakselv", 0.3, 60, -400, 65, false));
+        Assert.Contains("final approach", Prompts.LandingNote("Lakselv", 1.5, 500, -500, 80, false));
+        Assert.Contains("coming down", Prompts.LandingNote("Lakselv", 7, 2000, -500, 100, false));
+        Assert.Contains("arrived", Prompts.LandingNote("Lakselv", 0.5, 0, 0, 20, true));
+        Assert.Null(Prompts.LandingNote("Lakselv", 30, 2000, -500, 100, false));   // far away
+        Assert.Null(Prompts.LandingNote("Lakselv", 3, 1500, 300, 100, false));     // climbing past it
+        string s = Prompts.WhereNow("Mollisjok", "Lakselv", "Lakselv", 0.3, 1, "Ravnastua", 40, "You are landing.");
+        Assert.Contains("You are landing.", s);
+        Assert.DoesNotContain("Ravnastua", s);
+    }
+
+    [Fact]
+    public void Nobody_talks_like_a_pensioner_at_church()
+    {
+        string prompt = Prompts.Speaker(new Person { Name = "A B", Language = "no" }, null, new CareerState(), TalkMode.Phone, null, "no");
+        Assert.Contains("gudskjelov", prompt);
+        foreach (var (_, line) in ReactionLines.All("no")) Assert.DoesNotContain("gudskjelov", line, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void People_on_board_are_told_the_route_as_agreed()
+    {
+        string s = Prompts.WhereNow("Mollisjok", "Lakselv", "Lakselv", 41.2, 22.4, "Ravnastua", 7.8);
+        Assert.Contains("from Mollisjok to Lakselv", s);
+        Assert.Contains("41 nautical miles", s);
+        Assert.Contains("8 km from Ravnastua", s);
+        Assert.Contains("never ask where you are", Prompts.Speaker(new Person { Name = "A B" }, null, new CareerState(), TalkMode.Intercom, null));
+    }
+}
+
+public class TripTimingTests
+{
+    private static readonly DateTimeOffset T0 = new(2026, 11, 6, 12, 0, 0, TimeSpan.FromHours(1));
+
+    private static (Mission M, CareerState C, Person P) Booked(double minutesAhead)
+    {
+        var p = new Person { Id = "p", Name = "Ingrid Somby" };
+        var m = new Mission { Title = "Tur", CallerId = "p", Phase = MissionPhase.Booked, ReminderSent = true, LateCallMade = true, Plan = new MissionPlan { PickupId = "ENNA", DropoffId = "ENMP", PickupTime = T0.AddMinutes(minutesAhead) } };
+        var c = new CareerState();
+        c.People.Add(p);
+        c.Missions.Add(m);
+        return (m, c, p);
+    }
+
+    [Fact]
+    public void Almost_every_caller_wants_to_go_now_or_within_hours()
+    {
+        var t = MissionCatalog.Templates.First(x => x.Id == "town_errand");
+        var rng = new Random(3);
+        var wishes = Enumerable.Range(0, 1000).Select(_ => TripTiming.PickWish(t, rng)).ToList();
+        Assert.InRange(wishes.Count(w => w == TripWish.Now), 500, 700);
+        Assert.DoesNotContain(TripWish.Planned, wishes);
+        Assert.Equal(TripWish.Now, TripTiming.PickWish(MissionCatalog.Templates.First(x => x.Id == "medevac"), rng));
+    }
+
+    [Fact]
+    public void Every_new_job_tells_the_caller_when_they_want_to_go()
+    {
+        foreach (var t in MissionCatalog.Templates)
+        {
+            var m = MissionFactory.Create(t, new CareerView(new CareerState { Reputation = 100 }), new Random(1), T0);
+            Assert.Contains("You ", m.Premise);
+            Assert.True(new[] { "right now", "next hour", "this evening", "tomorrow" }.Any(m.Premise.Contains), t.Id);
+        }
+    }
+
+    [Fact]
+    public void Flying_time_counts_from_where_the_aircraft_is()
+    {
+        var banak = WorldData.ById("ENNA")!;
+        Assert.Equal(0, TripTiming.MinutesAway(banak.Lat, banak.Lon, banak, 110));
+        var alta = WorldData.ById("ENAT")!;
+        Assert.InRange(TripTiming.MinutesAway(alta.Lat, alta.Lon, banak, 110), 15, 40);
+        Assert.Equal(15, TripTiming.MinutesAway(null, null, banak, 110));
+    }
+
+    [Fact]
+    public void Nobody_can_be_picked_up_before_the_aircraft_can_get_there()
+    {
+        var earliest = T0.AddMinutes(20);
+        Assert.Equal(earliest, TripTiming.Settle(T0, earliest));
+        Assert.Equal(earliest, TripTiming.Settle(null, earliest));
+        Assert.Equal(T0.AddHours(2), TripTiming.Settle(T0.AddHours(2), earliest));
+    }
+
+    [Fact]
+    public void Fly_now_moves_the_time_and_clears_the_old_reminders()
+    {
+        var (m, c, p) = Booked(240);
+        var when = TripTiming.Move(m, c, T0.AddMinutes(10), T0.AddMinutes(10), T0);
+        Assert.Equal(T0.AddMinutes(10), when);
+        Assert.Equal(when, m.Plan.PickupTime);
+        Assert.False(m.ReminderSent);
+        Assert.False(m.LateCallMade);
+        Assert.Equal(0, p.Trust);
+        Assert.Contains(m.Plan.Changes, x => x.Field == "time");
+        Assert.Single(c.Inbox);
+    }
+
+    [Fact]
+    public void Pushing_back_costs_patience_only_per_full_hour()
+    {
+        var (m, c, p) = Booked(30);
+        TripTiming.Move(m, c, m.Plan.PickupTime!.Value.AddMinutes(30), T0, T0);
+        Assert.Equal(0, p.Trust);
+        Assert.Empty(c.Inbox);
+        TripTiming.Move(m, c, m.Plan.PickupTime!.Value.AddMinutes(30), T0, T0);
+        Assert.Equal(-3, p.Trust);
+        Assert.Single(c.Inbox);
+    }
+
+    [Fact]
+    public void Return_trip_defaults_to_later_the_same_day()
+    {
+        var when = TripTiming.DefaultReturn(T0, new Random(2));
+        Assert.InRange((when - T0).TotalHours, 2, 4.5);
+        Assert.Equal(0, when.Minute % 15);
+    }
+
+    [Fact]
+    public void The_note_taker_knows_what_right_now_means()
+    {
+        Assert.Contains("med en gang", Prompts.ScribeSystem);
+        Assert.Contains("flying time to the pickup: 23 minutes", Prompts.ScribeUser(T0, new MissionPlan(), ["a"], 22.4));
+    }
+}
+
+public class JobMixTests
+{
+    [Theory]
+    [InlineData(1)]
+    [InlineData(7)]
+    [InlineData(11)]
+    public void Most_work_is_plain_trips_from_here_to_there_in_any_season(int month)
+    {
+        var now = new DateTimeOffset(2026, month, 15, 12, 0, 0, TimeSpan.FromHours(1));
+        int tours = 0;
+        for (int seed = 0; seed < 600; seed++)
+        {
+            var c = new CareerState { Reputation = 60, NextCallAt = now.AddMinutes(-1) };
+            var m = new Director(c, new Random(seed)).ForceNewJob(new DirectorContext { Now = now });
+            if (m!.Sightseeing) tours++;
+        }
+        Assert.InRange(tours, 0, 90);   // about one job in eight or fewer
+    }
+
+    [Fact]
+    public void Every_new_trip_goes_between_two_different_places()
+    {
+        foreach (var t in MissionCatalog.Templates.Where(t => t.DropRule != "same"))
+        {
+            for (int i = 0; i < 20; i++)
+            {
+                var m = MissionFactory.Create(t, new CareerView(new CareerState { Reputation = 100 }), new Random(i), new DateTimeOffset(2026, 11, 6, 12, 0, 0, TimeSpan.Zero));
+                Assert.NotEqual(m.Plan.PickupId, m.Plan.DropoffId);
+            }
+        }
+    }
+}
+
+public class OffenceTests
+{
+    private static readonly DateTimeOffset Now = new(2026, 11, 6, 12, 0, 0, TimeSpan.FromHours(1));
+
+    [Fact]
+    public void A_sexual_proposition_cancels_the_job_costs_standing_and_shows_on_their_record()
+    {
+        var c = new CareerState { Reputation = 50 };
+        var kari = new Person { Name = "Kari", Trust = 20 };
+        var friend = new Person { Name = "Tone", Trust = 0 };
+        var bystander = new Person { Name = "Odd", Trust = 30, Talks = 1 };
+        var stranger = new Person { Name = "Nobody", Trust = 0 };
+        c.People.AddRange([kari, friend, bystander, stranger]);
+        var m = new Mission { CallerId = kari.Id, Phase = MissionPhase.Negotiating };
+        c.Missions.Add(m);
+        Offences.Apply(c, m, [kari, friend], "Piloten tilbød gratis tur mot seksuelle tjenester.", 2, Now);
+        Assert.Equal(MissionPhase.Cancelled, m.Phase);
+        Assert.Equal(-25, kari.Trust);
+        Assert.Equal(-45, friend.Trust);
+        Assert.Equal(44, c.Reputation);
+        Assert.True(kari.Record.Single().Serious);
+        Assert.Contains("seksuelle", kari.Memories.Single().Text);
+        Assert.Equal(26, bystander.Trust);
+        Assert.Equal(0, stranger.Trust);
+        Assert.Single(c.Inbox);
+    }
+
+    [Fact]
+    public void Being_rude_costs_a_little_and_the_flight_stays_on()
+    {
+        var c = new CareerState { Reputation = 50 };
+        var kari = new Person { Name = "Kari", Trust = 20 };
+        c.People.Add(kari);
+        var m = new Mission { CallerId = kari.Id, Phase = MissionPhase.Booked };
+        Offences.Apply(c, m, [kari], "Piloten var frekk.", 1, Now);
+        Assert.Equal(MissionPhase.Booked, m.Phase);
+        Assert.Equal(12, kari.Trust);
+        Assert.Equal(50, c.Reputation);
+    }
+
+    [Fact]
+    public void Everyone_is_told_never_to_go_along_with_it()
+    {
+        string prompt = Prompts.Speaker(new Person { Name = "Kari" }, null, new CareerState(), TalkMode.Phone, null, "no");
+        Assert.Contains("never go along with it", prompt);
+        Assert.Contains("Do not describe anything sexual", prompt);
+    }
+}
+
+public class TourTests
+{
+    private static readonly DateTimeOffset T0 = new(2026, 11, 7, 12, 0, 0, TimeSpan.FromHours(1));
+
+    [Fact]
+    public void Sightseeing_jobs_name_real_places_within_reach_and_the_route_goes_over_them()
+    {
+        for (int i = 0; i < 40; i++)
+        {
+            var m = MissionFactory.Create(MissionCatalog.ById("scenic_canyon")!, new CareerView(new CareerState()), new Random(i), T0);
+            Assert.NotEmpty(m.Stops);
+            Assert.Contains(m.Stops[0].Name, m.Premise);
+            Assert.True(m.RouteNm() > 4);
+            var (_, fuel, nm) = PlanEvaluator.Evaluate(m, AircraftProfile.C172, 85);
+            Assert.Equal(m.RouteNm(), nm, 1);
+            Assert.True(fuel.TripGal > 0);
+        }
+    }
+
+    [Fact]
+    public void Navigation_points_to_the_next_unseen_stop_then_home()
+    {
+        var stop = new TourStop { Name = "Sametinget", Lat = 69.4735, Lon = 25.5060 };
+        var m = new Mission { Phase = MissionPhase.Airborne, Stops = [stop], Plan = new MissionPlan { PickupId = "ENMB", DropoffId = "ENMB" } };
+        var t = new Telemetry { Time = T0, Lat = 69.6, Lon = 25.5060, GroundSpeedKt = 100, MagVarDeg = 10 };
+        var nav = Navigation.Next(m, t, AircraftProfile.C172)!;
+        Assert.Equal("Sametinget", nav.Name);
+        Assert.Equal(170, nav.CourseMagnetic, 0);
+        Assert.InRange(nav.Minutes, 3, 6);
+        stop.Seen = true;
+        Assert.Equal("Karasjok", Navigation.Next(m, t, AircraftProfile.C172)!.Name);
+    }
+
+    [Fact]
+    public void Flying_over_it_counts_and_turning_back_without_it_is_paid_for()
+    {
+        var c = new CareerState();
+        var flow = new MissionFlow(c);
+        var stop = new TourStop { Name = "Sautso", Lat = 69.67, Lon = 23.57 };
+        var m = new Mission { Phase = MissionPhase.Airborne, CreatedAt = T0, Stops = [stop], Plan = new MissionPlan { PickupId = "ENAT", DropoffId = "ENAT", PriceNok = 6000 } };
+        m.Score = new FlightScore { TouchdownFpm = 80, ComfortAvgSum = 95, ComfortSamples = 1, LandedAtDestination = true };
+        c.Missions.Add(m);
+        var missed = ReviewMaker.Make(m, c, null, T0);
+        Assert.Contains(missed.Points, p => p.Contains("Sautso"));
+
+        var over = new Telemetry { Time = T0, Lat = 69.671, Lon = 23.571, OnGround = false, AglFt = 800, GroundSpeedKt = 100, Title = "172" };
+        var ev = flow.Step(over, [], T0, 90);
+        Assert.Single(ev.OfType<StopReached>());
+        Assert.True(stop.Seen);
+        Assert.Empty(flow.Step(over, [], T0, 90).OfType<StopReached>());
+        Assert.True(ReviewMaker.Make(m, c, null, T0).Stars > missed.Stars);
+    }
+}
+
 public class FavoriteCallerTests
 {
     private static int HowOften(Action<CareerState, Person>? setup = null)

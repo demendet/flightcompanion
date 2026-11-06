@@ -16,6 +16,42 @@ namespace FlightCompanion.Views;
 /// </summary>
 internal static class SelfTest
 {
+    /// <summary>Renders the panic lines in one voice, saves them to listen to, and reads them back with Whisper to see if the direction in brackets was spoken.</summary>
+    public static async Task ScreamsAsync(string outDir)
+    {
+        var settings = AppSettings.Load();
+        var api = new ElevenLabs(new KeyStore(), settings);
+        var ct = CancellationToken.None;
+        Directory.CreateDirectory(outDir);
+        var voices = await api.ListVoicesAsync(ct);
+        var voice = voices.First(v => v.Language is "no" or "nb" || v.Accent.Contains("norw", StringComparison.OrdinalIgnoreCase));
+        using var factory = Whisper.net.WhisperFactory.FromPath(Path.Combine(AppPaths.Models, "ggml-small.bin"));
+        using var whisper = factory.CreateBuilder().WithLanguage("no").Build();
+        int n = 0;
+        var report = new List<string> { $"Model {api.CurrentModel}" };
+        foreach (var line in Game.Talk.ReactionLines.PanicNo.Take(3))
+        {
+            byte[] pcm = await api.RenderPanicAsync(line, voice.Id, "no", ct);
+            var samples = new float[pcm.Length / 2];
+            float peak = 0;
+            double sum = 0;
+            for (int i = 0; i < samples.Length; i++)
+            {
+                samples[i] = BitConverter.ToInt16(pcm, i * 2) / 32768f;
+                peak = Math.Max(peak, Math.Abs(samples[i]));
+                sum += samples[i] * samples[i];
+            }
+            string wav = Path.Combine(outDir, $"scream{++n}.wav");
+            using (var w = new NAudio.Wave.WaveFileWriter(wav, new NAudio.Wave.WaveFormat(24000, 16, 1))) w.Write(pcm, 0, pcm.Length);
+            var at16 = new float[(int)(samples.Length * 16000L / 24000)];
+            for (int i = 0; i < at16.Length; i++) at16[i] = samples[(int)(i * 24000L / 16000)];
+            var heard = new System.Text.StringBuilder();
+            await foreach (var seg in whisper.ProcessAsync(at16, ct)) heard.Append(seg.Text);
+            report.Add($"{line} | {samples.Length / 24000.0:0.0} s, peak {peak:0.00}, rms {Math.Sqrt(sum / samples.Length):0.00} | heard: {heard}");
+        }
+        File.WriteAllLines(Path.Combine(outDir, "screams.txt"), report);
+    }
+
     public static async Task RunAsync(string outDir)
     {
         Directory.CreateDirectory(outDir);

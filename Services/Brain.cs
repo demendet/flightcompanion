@@ -97,11 +97,16 @@ public sealed class Brain(KeyStore keys, AppSettings settings) : ISpeakerModel
             ["call_is_over"] = Nullable("boolean"),
             ["new_note"] = Nullable("string"),
         };
+        // Left out of "required" on purpose: Claude allows 16 nullable fields, and these are usually simply absent.
+        var required = props.Keys.ToArray();
+        props["tour_place"] = new { type = "string" };
+        props["offence_note"] = new { type = "string" };
+        props["offence_severity"] = new { type = "integer" };
         return new Dictionary<string, JsonElement>
         {
             ["type"] = JsonSerializer.SerializeToElement("object"),
             ["properties"] = JsonSerializer.SerializeToElement(props),
-            ["required"] = JsonSerializer.SerializeToElement(props.Keys.ToArray()),
+            ["required"] = JsonSerializer.SerializeToElement(required),
             ["additionalProperties"] = JsonSerializer.SerializeToElement(false),
         };
     }
@@ -142,6 +147,7 @@ public sealed class Brain(KeyStore keys, AppSettings settings) : ISpeakerModel
                 PickupTimeLocal = S("pickup_time_local"), ReturnTimeLocal = S("return_time_local"),
                 PriceNok = D("price_nok"), PricePerPersonNok = D("price_per_person_nok"), BothAgreed = B("both_agreed"), PilotDeclined = B("pilot_declined"),
                 CallIsOver = B("call_is_over"), NewNote = S("new_note"),
+                TourPlace = S("tour_place"), OffenceNote = S("offence_note"), OffenceSeverity = D("offence_severity") is { } sev ? (int)sev : null,
             };
         }
         catch (JsonException ex)

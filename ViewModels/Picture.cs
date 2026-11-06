@@ -16,7 +16,39 @@ public sealed record StatusRow(string Name, string Text, IBrush Dot);
 public sealed record ChatRow(string Who, string Text, bool FromPilot, IBrush WhoBrush);
 public sealed record JobRow(string Id, string Title, string When, string Route, string Status, IBrush StatusBrush, bool Selected);
 public sealed record SmsRow(string When, string From, string Text);
-public sealed record PersonRow(string Name, string Line, string Standing, string Memory, IBrush StandingBrush);
+public sealed record BarRow(string Label, double Value, string Text, IBrush Brush);
+public sealed record FactRow(string Label, string Value);
+public sealed record MemoryRow(string When, string Text);
+public sealed record PersonFlightRow(string When, string Title, string Route, string Outcome, string Money);
+
+public sealed record PersonRow
+{
+    public required string Id { get; init; }
+    public required string Name { get; init; }
+    public required string Initials { get; init; }
+    public required IBrush AvatarBrush { get; init; }
+    public required string Line { get; init; }
+    public required string Standing { get; init; }
+    public required IBrush StandingBrush { get; init; }
+    public required double TrustValue { get; init; }
+    public required string Memory { get; init; }
+    public required bool HasMemory { get; init; }
+    public required string QuickFacts { get; init; }
+    public required string CallLabel { get; init; }
+    public required string Personality { get; init; }
+    public required IReadOnlyList<BarRow> Bars { get; init; }
+    public required IReadOnlyList<FactRow> Facts { get; init; }
+    public required IReadOnlyList<MemoryRow> Memories { get; init; }
+    public required bool NoMemories { get; init; }
+    public required IReadOnlyList<PersonFlightRow> Flights { get; init; }
+    public required bool NoFlights { get; init; }
+    public required IReadOnlyList<RecordRow> Record { get; init; }
+    public required bool NoRecord { get; init; }
+    public required bool HasSerious { get; init; }
+    public required string SeriousLine { get; init; }
+    public required double TrustRaw { get; init; }
+    public required int FlightCount { get; init; }
+}
 public sealed record LogRow(string When, string Title, string Route, string Stars, string Money, string Quote, string Points);
 public sealed record LedgerRow(string When, string Text, string Amount, IBrush AmountBrush);
 public sealed record SeatRow(string Label, string Who, string Kg, bool Guess);
@@ -25,8 +57,13 @@ public sealed record ChangeRow(string Text);
 
 public sealed record EnvelopeData(AircraftProfile Profile, double TakeoffLb, double TakeoffCg, double LandingLb, double LandingCg, double? LiveLb, double? LiveCg, bool Legal);
 
-public sealed record MapMarker(string Name, double Lat, double Lon, bool Remote, bool LabelLeft);
-public sealed record MapData(IReadOnlyList<MapMarker> Places, Place? From, Place? To, double? PlaneLat, double? PlaneLon, double PlaneHeading);
+public sealed record MapMarker(string Name, double Lat, double Lon, bool Remote, bool LabelLeft, bool Airport, double RunwayM, bool HasFuel);
+public sealed record MapName(string Name, double Lat, double Lon);
+public sealed record PlanePos(double Lat, double Lon, double Heading, double ReachNm, IReadOnlyList<(double Lat, double Lon)> Trail, double? NavLat, double? NavLon);
+public sealed record MapStop(string Name, double Lat, double Lon, bool Seen);
+public sealed record MapData(IReadOnlyList<MapMarker> Places, Place? From, Place? To, IReadOnlyList<MapStop> Stops, IReadOnlyList<MapName> Sights, IReadOnlyList<MapName> Known, double CruiseKt);
+public sealed record RecordRow(string When, string Text, string Change, IBrush ChangeBrush);
+public sealed record RouteRow(string Text, IBrush Brush);
 
 public sealed record FuelPicture
 {
@@ -77,6 +114,8 @@ public sealed record CardPicture
     public required bool CanBoard { get; init; }
     public required bool CanDeplane { get; init; }
     public required bool CanCancel { get; init; }
+    public required bool CanMoveTime { get; init; }
+    public required DateTimeOffset? PickupAt { get; init; }
     public required string BoardLabel { get; init; }
     public required bool HasReview { get; init; }
     public required string ReviewLine { get; init; }
@@ -114,10 +153,12 @@ public sealed record Picture
     public required IReadOnlyList<SmsRow> Inbox { get; init; }
     public required IReadOnlyList<PersonRow> People { get; init; }
     public required bool NoPeople { get; init; }
+    public required string PeopleSummary { get; init; }
     public required IReadOnlyList<LogRow> Logbook { get; init; }
     public required IReadOnlyList<LedgerRow> Ledger { get; init; }
     public required MapData Map { get; init; }
     public required string FuelCache { get; init; }
+    public required IReadOnlyList<RouteRow> Route { get; init; }
     public required FuelPicture Fuel { get; init; }
 }
 
@@ -219,10 +260,10 @@ public static class PictureBuilder
             Jobs = jobs,
             NoJobs = jobs.Count == 0,
             Inbox = c.Inbox.AsEnumerable().Reverse().Take(15).Select(s => new SmsRow(Clock.ToLocal(s.When).ToString("ddd HH:mm", Culture), s.From, s.Text)).ToList(),
-            People = c.People.Where(p => p.FlightsWithYou > 0 || p.Talks > 0).OrderByDescending(p => p.LastContact).Take(100).Select(p => new PersonRow(
-                p.Name, L.F("{0}, {1}, talked {2} times, flown {3} times", p.Job, p.Home.Length > 0 ? p.Home : p.Nationality, p.Talks, p.FlightsWithYou),
-                L.T(p.Trust switch { > 50 => "Trusts you completely", > 15 => "Likes you", > -15 => "Neutral", > -50 => "Wary of you", _ => "Will not fly with you" }),
-                p.Memories.LastOrDefault()?.Text ?? "", p.Trust > 15 ? Palette.Good : p.Trust < -15 ? Palette.Stop : Palette.Quiet)).ToList(),
+            People = c.People.Where(p => p.FlightsWithYou > 0 || p.Talks > 0).OrderByDescending(p => p.LastContact).Take(200).Select(p => BuildPerson(h, p)).ToList(),
+            PeopleSummary = L.F("{0} people know you", c.People.Count(p => p.FlightsWithYou > 0 || p.Talks > 0)) + ". "
+                + L.F("{0} trust you", c.People.Count(p => (p.FlightsWithYou > 0 || p.Talks > 0) && p.Trust > 15)) + ". "
+                + L.F("{0} are wary of you", c.People.Count(p => (p.FlightsWithYou > 0 || p.Talks > 0) && p.Trust < -15)) + ".",
             NoPeople = !c.People.Any(p => p.FlightsWithYou > 0 || p.Talks > 0),
             Logbook = c.Missions.Where(m => m.Review is not null).OrderByDescending(m => m.LandedAt).Take(100).Select(m => new LogRow(
                 m.LandedAt is { } l ? LocalTime(l) : "", m.Title, L.F("{0} to {1}", m.Pickup?.Name, m.Dropoff?.Name), L.F("{0:0.0} of 5", m.Review!.Stars),
@@ -230,8 +271,106 @@ public static class PictureBuilder
             Ledger = c.Ledger.AsEnumerable().Reverse().Take(100).Select(e => new LedgerRow(Clock.ToLocal(e.When).ToString("d MMM HH:mm", Culture), e.Text, Nok(e.AmountNok), e.AmountNok < 0 ? Palette.Stop : Palette.Good)).ToList(),
             FuelCache = string.Join(", ", c.FuelCache.Where(k => k.Value >= 1).Select(k => L.F("{0:0} gal at {1}", k.Value, WorldData.ById(k.Key)?.Name ?? k.Key))),
             Fuel = BuildFuel(h, focus, aircraft),
-            Map = new MapData(WorldData.Places.Select(p => new MapMarker(p.Name, p.Lat, p.Lon, p.Remote, p.Id == "ENMP")).ToList(), focus?.Pickup, focus?.Dropoff, h.Latest?.Lat, h.Latest?.Lon, h.Latest?.HeadingTrue ?? 0),
+            Map = new MapData(WorldData.Places.Select(p => new MapMarker(p.Name, p.Lat, p.Lon, p.Remote, p.Id == "ENMP", p.Kind == PlaceKind.Airport, p.RunwayM, p.FuelPriceNokPerGal is not null)).ToList(),
+                focus?.Pickup, focus?.Dropoff, focus?.Stops.Select(x => new MapStop(x.Name, x.Lat, x.Lon, x.Seen)).ToList() ?? [],
+                WorldData.Landmarks.Where(x => !WorldData.Places.Any(p => x.Name == p.Name || x.Name == p.Name + " lodge")).Select(x => new MapName(L.T(x.Name), x.Lat, x.Lon)).ToList(),
+                h.KnownPlaces.Select(x => new MapName(x.Name, x.Lat, x.Lon)).ToList(), aircraft.CruiseKtas),
+            Route = focus is null ? [] : BuildRoute(focus),
         };
+    }
+
+    private static IReadOnlyList<RouteRow> BuildRoute(Mission m)
+    {
+        var rows = new List<RouteRow>();
+        if (m.Pickup is { } a)
+        {
+            bool there = m.ArrivedAtPickup is not null;
+            rows.Add(new RouteRow(L.F("{0} {1}", there ? "\u2713" : "1.", L.F("Pick up at {0}", a.Name)), there ? Palette.Quiet : Palette.Text));
+        }
+        int n = 2;
+        foreach (var s in m.Stops)
+            rows.Add(new RouteRow(L.F("{0} {1}", s.Seen ? "\u2713" : $"{n++}.", L.F("Fly over {0}", s.Name)), s.Seen ? Palette.Good : Palette.Caution));
+        if (m.Dropoff is { } b)
+            rows.Add(new RouteRow(L.F("{0} {1}", $"{n}.", L.F("Land at {0}", b.Name)), Palette.Text));
+        return rows;
+    }
+
+    private static readonly IBrush[] Avatars = new[] { "#2F6F62", "#7A5C2E", "#3F5E8C", "#7B3F5C", "#556B2F", "#5A4B8C", "#2E6E7E", "#8A4B2E" }
+        .Select(c => (IBrush)new Avalonia.Media.Immutable.ImmutableSolidColorBrush(Color.Parse(c))).ToArray();
+    private static readonly IBrush Neutral = new Avalonia.Media.Immutable.ImmutableSolidColorBrush(Color.Parse("#7F9C95"));
+
+    private static PersonRow BuildPerson(GameHost h, Game.People.Person p)
+    {
+        var c = h.Career;
+        var mine = c.Missions.Where(m => m.CallerId == p.Id || m.CompanionIds.Contains(p.Id))
+            .Where(m => m.Phase is not (MissionPhase.Ringing or MissionPhase.Declined))
+            .OrderByDescending(m => m.LandedAt ?? m.Plan.PickupTime ?? m.CreatedAt).ToList();
+        var done = mine.Where(m => m.Review is not null).ToList();
+        double paid = done.Where(m => m.CallerId == p.Id).Sum(m => m.Review!.PayNok + m.Review.TipNok);
+        double? avg = done.Count > 0 ? done.Average(m => m.Review!.Stars) : null;
+        string standing = L.T(p.Trust switch { > 50 => "Trusts you completely", > 15 => "Likes you", > -15 => "Neutral", > -50 => "Wary of you", _ => "Will not fly with you" });
+        var standingBrush = p.Trust > 15 ? Palette.Good : p.Trust < -15 ? Palette.Stop : Palette.Caution;
+        string From = p.Home.Length > 0 ? p.Home : p.Nationality;
+        string first = p.Name.Split(' ')[0];
+        string initials = string.Concat(p.Name.Split(' ', StringSplitOptions.RemoveEmptyEntries).Take(2).Select(x => x[0])).ToUpperInvariant();
+        string Last = p.LastContact is { } t ? Clock.ToLocal(t).ToString("d. MMM HH:mm", Culture) : L.T("Never");
+
+        BarRow Bar(string label, double value, string text, IBrush brush) => new(L.T(label), Math.Clamp(value, 0, 1), text, brush);
+        string Level(double v) => v switch { > 0.75 => L.T("Very high"), > 0.5 => L.T("High"), > 0.25 => L.T("Medium"), _ => L.T("Low") };
+
+        var bars = new List<BarRow>
+        {
+            Bar("Trust", (p.Trust + 100) / 200, $"{p.Trust:+0;-0;0}", standingBrush),
+            Bar("Fear of flying", p.Fear, Level(p.Fear), p.Fear > 0.6 ? Palette.Stop : Palette.Caution),
+            Bar("Talkative", p.Chatty, Level(p.Chatty), Neutral),
+            Bar("Temper", p.Temper, Level(p.Temper), p.Temper > 0.7 ? Palette.Stop : p.Temper > 0.4 ? Palette.Caution : Palette.Good),
+            Bar("Generosity", p.Wealth, Level(p.Wealth), Palette.Good),
+            // Honesty stays hidden until you have flown with them. Knowing it on the phone would spoil the scale.
+            p.FlightsWithYou > 0 ? Bar("Honesty", p.Honesty, Level(p.Honesty), p.Honesty < 0.4 ? Palette.Stop : Palette.Good)
+                : Bar("Honesty", 0, L.T("Fly with them to find out"), Neutral),
+        };
+
+        string voiceName = h.Caster.Voices.FirstOrDefault(v => v.Id == p.VoiceId)?.Name.Split(" - ")[0] ?? L.T("Not known yet");
+        var weighedOn = c.Missions.Any(m => m.Plan.BaggageWeighed && m.Plan.Passengers.Any(x => x.PersonId == p.Id));
+        var facts = new List<FactRow>
+        {
+            new(L.T("From"), From), new(L.T("Age"), L.F("{0} years", p.Age)), new(L.T("Voice"), voiceName),
+            new(L.T("Weight"), weighedOn ? L.F("{0:0} kg, weighed", p.WeightKg) : L.T("Never weighed")),
+            new(L.T("Flights"), p.FlightsWithYou.ToString()), new(L.T("Talks"), p.Talks.ToString()),
+            new(L.T("Paid you"), Nok(paid)), new(L.T("Average"), avg is { } a ? L.F("{0:0.0} of 5", a) : "-"),
+            new(L.T("Last contact"), Last),
+        };
+        if (p.ReferredBy is { } by) facts.Add(new(L.T("Referred by {0}").Split(' ')[0], by));
+
+        return new PersonRow
+        {
+            Id = p.Id, Name = p.Name, Initials = initials, AvatarBrush = Avatars[Math.Abs(StableHash(p.Id)) % Avatars.Length],
+            Line = $"{L.T(p.Job)}, {From}", Standing = standing, StandingBrush = standingBrush, TrustValue = (p.Trust + 100) / 200, TrustRaw = p.Trust, FlightCount = p.FlightsWithYou,
+            Memory = p.Memories.LastOrDefault()?.Text ?? "", HasMemory = p.Memories.Count > 0,
+            QuickFacts = $"{L.T("Flights")} {p.FlightsWithYou}   {L.T("Talks")} {p.Talks}   {L.T("Paid you")} {Nok(paid)}",
+            CallLabel = L.F("Call {0}", first), Personality = L.T(p.Personality),
+            Bars = bars, Facts = facts,
+            Memories = p.Memories.AsEnumerable().Reverse().Select(m => new MemoryRow(Clock.ToLocal(m.When).ToString("d. MMM yyyy", Culture), m.Text)).ToList(),
+            NoMemories = p.Memories.Count == 0,
+            Flights = mine.Select(m => new PersonFlightRow(
+                (m.LandedAt ?? m.Plan.PickupTime ?? m.CreatedAt) is var w ? Clock.ToLocal(w).ToString("d. MMM", Culture) : "",
+                m.Title, L.F("{0} to {1}", m.Pickup?.Name, m.Dropoff?.Name),
+                m.Review is { } r ? L.F("{0:0.0} of 5", r.Stars) : PhaseWords(m.Phase),
+                m.Review is { } rv ? Nok(rv.PayNok + rv.TipNok) : m.Plan.PriceNok is { } pr ? Nok(pr) : "")).ToList(),
+            NoFlights = mine.Count == 0,
+            Record = p.Record.AsEnumerable().Reverse().Select(e => new RecordRow(Clock.ToLocal(e.When).ToString("d. MMM HH:mm", Culture), e.Text, $"{e.TrustChange:+0;-0;0}",
+                e.TrustChange < 0 ? Palette.Stop : Palette.Good)).ToList(),
+            NoRecord = p.Record.Count == 0,
+            HasSerious = p.Record.Any(e => e.Serious),
+            SeriousLine = p.Record.LastOrDefault(e => e.Serious)?.Text ?? "",
+        };
+    }
+
+    private static int StableHash(string s)
+    {
+        int h = 17;
+        foreach (char ch in s) h = unchecked(h * 31 + ch);
+        return h == int.MinValue ? 0 : h;
     }
 
     private static FuelPicture BuildFuel(GameHost h, Mission? m, AircraftProfile a)
@@ -375,6 +514,8 @@ public static class PictureBuilder
             CanBoard = canTalkAtStrip,
             CanDeplane = m.Phase == MissionPhase.Landed && t is { OnGround: true, GroundSpeedKt: < 1 },
             CanCancel = Cancellation.Allowed(m),
+            CanMoveTime = m.Phase == MissionPhase.Booked,
+            PickupAt = m.Plan.PickupTime,
             BoardLabel = L.T(m.Plan.Passengers.Count > 0 ? "Board everyone" : "Load the cargo"),
             HasReview = r is not null,
             ReviewLine = r is null ? "" : L.F("{0:0.0} of 5, paid {1}", r.Stars, Nok(r.PayNok + r.TipNok)) + (r.RepairNok > 0 ? L.F(", mechanic {0}", Nok(r.RepairNok)) : "") + L.F(r.ReputationDelta >= 0 ? ", reputation up {0:0.0}" : ", reputation down {0:0.0}", Math.Abs(r.ReputationDelta)),

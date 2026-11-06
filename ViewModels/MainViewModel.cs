@@ -24,7 +24,7 @@ public sealed class RelayCommand<T>(Action<T> run) : ICommand
     public void Execute(object? parameter) { if (parameter is T t) run(t); }
 }
 
-public enum Page { Board, People, Logbook, Money, Settings }
+public enum Page { Board, Map, People, Logbook, Money, Settings }
 
 public sealed class MainViewModel : INotifyPropertyChanged
 {
@@ -86,6 +86,10 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private void LiveTick()
     {
         MicLevel = _host.MicLevel;
+        NavLine = _host.NavLine;
+        WhenSoon = Pic.Card?.PickupAt is { } due ? UntilPickup((due - DateTimeOffset.Now).TotalMinutes) : "";
+        ReachLine = _host.ReachLine;
+        if (!ReferenceEquals(_plane, _host.PlanePosition)) { _plane = _host.PlanePosition; Raise(nameof(Plane)); }
         if (_volumeDirty && !Dragging())
         {
             _volumeDirty = false;
@@ -111,13 +115,51 @@ public sealed class MainViewModel : INotifyPropertyChanged
     [DllImport("user32.dll")]
     private static extern short GetKeyState(int key);
 
-    public Picture? Pic { get => _pic; private set { _pic = value; Raise(); } }
+    public Picture? Pic
+    {
+        get => _pic;
+        private set
+        {
+            _pic = value;
+            Raise();
+            Raise(nameof(PeopleShown));
+            Raise(nameof(SelectedPerson));
+            Raise(nameof(HasSelectedPerson));
+        }
+    }
+
+    private string? _selectedPersonId;
+    private int _peopleFilter;
+
+    public PersonRow? SelectedPerson => _pic?.People.FirstOrDefault(p => p.Id == _selectedPersonId);
+    public bool HasSelectedPerson => SelectedPerson is not null;
+
+    public System.Collections.Generic.IReadOnlyList<PersonRow> PeopleShown => (_pic?.People ?? []).Where(p => _peopleFilter switch
+    {
+        1 => p.TrustRaw > 15,
+        2 => p.TrustRaw < -15,
+        3 => p.FlightCount == 0,
+        _ => true,
+    }).ToList();
+
+    private void Filter(int f) { _peopleFilter = f; Raise(nameof(PeopleShown)); }
+    public ICommand FilterAll => new RelayCommand(() => Filter(0));
+    public ICommand FilterFriends => new RelayCommand(() => Filter(1));
+    public ICommand FilterWary => new RelayCommand(() => Filter(2));
+    public ICommand FilterNotFlown => new RelayCommand(() => Filter(3));
+    public ICommand OpenPerson => new RelayCommand<string>(id => { _selectedPersonId = id; Raise(nameof(SelectedPerson)); Raise(nameof(HasSelectedPerson)); });
+    public ICommand ClosePerson => new RelayCommand(() => { _selectedPersonId = null; Raise(nameof(SelectedPerson)); Raise(nameof(HasSelectedPerson)); });
+    public ICommand CallPerson => new RelayCommand<string>(id => { _selectedPersonId = null; Raise(nameof(SelectedPerson)); Raise(nameof(HasSelectedPerson)); Go(Page.Board); _host.CallPersonById(id); });
+
+    /// <summary>Layout preview only.</summary>
+    public void PreviewPeople(string? openId) { Go(Page.People); _selectedPersonId = openId; RefreshNow(); }
     public double MicLevel { get => _micLevel; private set { if (Math.Abs(_micLevel - value) > 0.005) { _micLevel = value; Raise(); } } }
     public string LiveLine { get => _liveLine; private set { if (_liveLine != value) { _liveLine = value; Raise(); } } }
     public string Toast { get => _toast; private set { _toast = value; Raise(); Raise(nameof(HasToast)); } }
     public bool HasToast => _toast.Length > 0;
 
     public bool OnBoard => _page == Page.Board;
+    public bool OnMap => _page == Page.Map;
     public bool OnPeople => _page == Page.People;
     public bool OnLogbook => _page == Page.Logbook;
     public bool OnMoney => _page == Page.Money;
@@ -126,10 +168,11 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private void Go(Page p)
     {
         _page = p;
-        Raise(nameof(OnBoard)); Raise(nameof(OnPeople)); Raise(nameof(OnLogbook)); Raise(nameof(OnMoney)); Raise(nameof(OnSettings));
+        Raise(nameof(OnBoard)); Raise(nameof(OnMap)); Raise(nameof(OnPeople)); Raise(nameof(OnLogbook)); Raise(nameof(OnMoney)); Raise(nameof(OnSettings));
     }
 
     public ICommand GoBoard => new RelayCommand(() => Go(Page.Board));
+    public ICommand GoMap => new RelayCommand(() => Go(Page.Map));
     public ICommand GoPeople => new RelayCommand(() => Go(Page.People));
     public ICommand GoLogbook => new RelayCommand(() => Go(Page.Logbook));
     public ICommand GoMoney => new RelayCommand(() => Go(Page.Money));
@@ -179,7 +222,30 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public ICommand RefuelRoundTrip => new RelayCommand(() => { if (Pic?.Fuel is { } f) _host.Refuel(f.RoundTripTarget); });
     public ICommand RefuelFull => new RelayCommand(() => { if (Pic?.Fuel is { } f) _host.Refuel(f.FullTarget); });
     public ICommand CallCustomer => new RelayCommand<string>(_host.CallPerson);
-    public ICommand SelectJob => new RelayCommand<string>(id => { _selected = id; AskingToCancel = false; Refresh(); });
+    public ICommand SelectJob => new RelayCommand<string>(id => { _selected = id; _host.SelectedMissionId = id; AskingToCancel = false; Refresh(); });
+    private PlanePos? _plane;
+    public PlanePos? Plane => _plane;
+    private string _reachLine = "";
+    public string ReachLine { get => _reachLine; private set { if (_reachLine != value) { _reachLine = value; Raise(); } } }
+    /// <summary>Layout preview only.</summary>
+    public void PreviewMap() { Go(Page.Map); RefreshNow(); }
+    public void PreviewPlane(PlanePos p) { _plane = p; Raise(nameof(Plane)); }
+    private string _whenSoon = "";
+    public string WhenSoon { get => _whenSoon; private set { if (_whenSoon != value) { _whenSoon = value; Raise(); } } }
+    private static string UntilPickup(double minutes) => minutes switch
+    {
+        < -1 => L.F("{0:0} min late", -minutes),
+        < 1 => L.T("Now"),
+        < 180 => L.F("In {0:0} min", minutes),
+        _ => L.F("In {0:0} hours", minutes / 60),
+    };
+    public ICommand MoveTime => new RelayCommand<string>(by =>
+    {
+        if (Pic.Card?.Id is { } id) _host.MoveTime(id, by == "now" ? null : int.Parse(by!, System.Globalization.CultureInfo.InvariantCulture));
+    });
+    private string _navLine = "";
+    public string NavLine { get => _navLine; private set { if (_navLine != value) { _navLine = value; Raise(); Raise(nameof(HasNav)); } } }
+    public bool HasNav => _navLine.Length > 0;
 
     private bool _askingToCancel;
     /// <summary>Cancelling asks once first, because a stray click would otherwise leave people standing at a strip.</summary>

@@ -84,6 +84,14 @@
             <Setter Property="HorizontalAlignment" Value="Stretch" />
             <Setter Property="HorizontalContentAlignment" Value="Stretch" />
         </Style>
+        <Style Selector="Button.person">
+            <Setter Property="Background" Value="{StaticResource Panel}" />
+            <Setter Property="BorderBrush" Value="{StaticResource Line}" />
+            <Setter Property="CornerRadius" Value="5" />
+            <Setter Property="Padding" Value="14" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="VerticalAlignment" Value="Top" />
+        </Style>
         <Style Selector="TextBox">
             <Setter Property="Background" Value="{StaticResource Night}" />
             <Setter Property="BorderBrush" Value="{StaticResource Line}" />

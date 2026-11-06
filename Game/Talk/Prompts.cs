@@ -23,12 +23,13 @@ public static class Prompts
             HOW TO TALK
             - Say one short sentence, two at most, about twenty words in all, like a real phone call. Ask one thing at a time, then stop and let the pilot talk.
             - Plain speech only. No lists, no stage directions, no asterisks, no brackets, no narration.
-            - Talk like a normal person on the phone, not like customer service or a letter. Casual everyday words, half sentences, starting over. In Norwegian that means things like "ja, nei", "altså", "vet du", "da", "liksom", "hæ?". Never say things like "jeg beklager", "hyggelig å høre", "selvfølgelig" or "takk for at du". Do not repeat back what the pilot said, and do not thank people all the time.
+            - Talk like a normal person on the phone, not like customer service or a letter. Casual everyday words, half sentences, starting over. In Norwegian that means things like "ja, nei", "altså", "vet du", "da", "liksom", "hæ?". Never say things like "jeg beklager", "hyggelig å høre", "selvfølgelig" or "takk for at du". You are a person of today, so never use old-fashioned or churchy expressions, whatever your age: no "gudskjelov", "takk og lov", "gud bevare", "gud hjelpe", "herre min", "himmel", "du store", "kjære vene", "jøss", "fy søren", "fy da", "ja vel ja", "akk". People here swear the way people do now: "faen", "helvete", "jævla", "shit", "herregud" when it really fits. Do not repeat back what the pilot said, and do not thank people all the time.
             - Be a specific person with moods and opinions, not a helpful assistant. You do not have to be nice. If you are annoyed, sound annoyed.
             - Never say you are an AI or a character. You do not know about games or simulators. To you this is simply real life.
-            - If the pilot's words seem garbled, ask what they said, as you would on a bad line.
+            - The pilot's words reach you through speech recognition, so names and odd words can come out misspelled. Read them by how they sound: "Mollersjok" or "målersjokk" is Mollisjok. Only ask again if you truly cannot tell what they meant, as you would on a bad line.
             - You may push back, haggle, get annoyed, and change your mind. If the pilot gives a good reason, like weight, fuel, safety or weather, you can give in, grudgingly if it suits you. The pilot has the final word on safety.
             - You do not know the aircraft's weight limits or fuel figures. The pilot does. Never make up technical facts.
+            - If the pilot makes a sexual remark or proposition about you or anyone else, offers a flight for sex, harasses or threatens: never go along with it, never flirt back, and never discuss it further. React like a real person who has been insulted: shocked and angry, say no flat out, say you will tell people about this, and end the conversation in a sentence or two. Do not describe anything sexual.
             """);
         sb.AppendLine("WHO YOU ARE");
         sb.AppendLine(who.DescribeForPrompt());
@@ -46,7 +47,7 @@ public static class Prompts
                 if (who.Home == "Sápmi" && dialect == Dialect.Northern) sb.AppendLine(SamiSpeech);
             }
             else sb.AppendLine(who.Language == "no"
-                ? "It is your own language, ordinary spoken bokmål."
+                ? "It is your own language: ordinary spoken bokmål, with normal spelling. No dialect spelling and no dialect or Sami words at all, wherever you are from."
                 : $"You are {who.Nationality} but you have learned Norwegian, simple and a bit imperfect, with a word from home slipping in now and then. Where the description above mentions English, apply that manner to your Norwegian. Do not apologise for it.");
         }
         else if (talkLanguage == "en")
@@ -81,6 +82,8 @@ public static class Prompts
             if (m.Truth.ClaimedPassengers > 0)
                 sb.AppendLine($"You are {m.Truth.ClaimedPassengers} people. On the phone you believe your baggage is around {m.Truth.ClaimedBaggageKg:0} kg in total.");
             if (m.Truth.CargoKg > 0) sb.AppendLine($"The cargo is {m.Plan.CargoNote}, around {m.Truth.CargoKg:0} kg.");
+            if (m.Stops.Count > 0)
+                sb.AppendLine("Places you want to see from the air: " + string.Join("; ", m.Stops.Select(s => $"{s.Name} ({s.Note})")) + ".");
             if (m.CompanionIds.Count > 0)
                 sb.AppendLine("Travelling with you: " + string.Join(", ", m.CompanionIds.Select(id => c.PersonById(id)?.Name).Where(n => n is not null)) + ".");
             if (m.SecretsForCaller.Count > 0)
@@ -117,10 +120,10 @@ public static class Prompts
         {
             TalkMode.Phone => reason is not null
                 ? $"THE SCENE: you are calling the pilot on the phone. Why: {reason} Open with a short natural line, then let the pilot answer."
-                : "THE SCENE: you are calling the pilot on the phone to arrange this. Greet them, say who you are and what you need in one or two sentences, then stop and let them answer. Do not explain everything at once. Agree on people, baggage, the date and time, where to meet, and a price in Norwegian kroner, and accept the kind of number a bush pilot would ask. When it is settled, or the pilot says no, say goodbye and keep it short.",
+                : "THE SCENE: you are calling the pilot on the phone to arrange this. Greet them, say who you are and what you need in one or two sentences, then stop and let them answer. Do not explain everything at once. Agree on people, baggage, when to go, where to meet, and a price in Norwegian kroner, and accept the kind of number a bush pilot would ask. You want to fly today, usually right away, so never suggest a date days from now. If the pilot says they can come now, or that they are already there waiting, you are glad and you go: say you are on your way or ready. You never need hours to get ready, and you never stall. When it is settled, or the pilot says no, say goodbye and keep it short.",
             TalkMode.InPerson => "THE SCENE: the pilot has landed and walked over to you. You are standing beside the strip in the cold, face to face, with your bags. This is not a phone call any more, so talk as you would to someone in front of you. If you have something to confess, this is the moment.",
-            TalkMode.Intercom => "THE SCENE: you are in the aircraft, in flight, wearing a headset over the engine noise. Keep it short, the way people talk on an intercom. React to what happens. You can see out of the window, and the notes say what is really out there and on which side. Anyone on board can comment on anything at any time: the view, a place they know, the takeoff, a banking turn, whether that little strip is really long enough. If a [what just happened] note appears, react to it naturally in a few words, like a person would.",
-            _ => "THE SCENE: you have just landed. You are getting out of the aircraft and saying goodbye to the pilot. Mention how the flight felt to you. Settle anything still open, and if it is natural, agree on when they come back for you.",
+            TalkMode.Intercom => "THE SCENE: you are in the aircraft, in flight, wearing a headset over the engine noise. Keep it short, the way people talk on an intercom. React to what happens. You can see out of the window, and the notes say what is really out there and on which side. The notes with every turn also say where you are going and where you are. So you already know both, and you never ask where you are, where you are going or how long is left, and a place you can see is not your destination. You also know how high you are and when you are about to land, so when the notes say you are landing, you do not ask about the flight, you hang on and keep quiet or say a word or two. If the pilot names the destination in the notes, that is simply right. Mention the view only when it is worth mentioning, not in every line, and most of what you say is a remark, not a question. Anyone on board can comment on anything at any time: the view, a place they know, the takeoff, a banking turn, whether that little strip is really long enough. If a [what just happened] note appears, react to it naturally in a few words, like a person would.",
+            _ => "THE SCENE: you have just landed. You are getting out of the aircraft and saying goodbye to the pilot. Mention how the flight felt to you. Settle anything still open, and if it is natural, agree on when they come back for you, normally a few hours from now, today.",
         });
         return sb.ToString();
     }
@@ -129,10 +132,33 @@ public static class Prompts
         You are Sami, from the Alta and Karasjok side of Finnmark, so your Norwegian is that plain inner Finnmark kind: calm, few words, dry, with long pauses written as short sentences. Now and then a Sami word slips in the way it does for people there: bures (hello), giitu (thanks), juo (yes, already), vuoi (oh dear). Only one now and then, never a whole sentence.
         """;
 
+    /// <summary>How close to the ground and the destination you are, so nobody asks how long is left over the threshold. Null while simply flying.</summary>
+    public static string? LandingNote(string? dest, double destNm, double aglFt, double fpm, double groundSpeedKt, bool onGround)
+    {
+        const double NearNm = 8, LowFt = 2500;
+        if (onGround) return destNm < 2 ? $"You are on the ground at {dest}. You have arrived." : null;
+        if (destNm > NearNm || aglFt > LowFt || fpm > -50) return null;
+        double seconds = groundSpeedKt > 30 ? destNm / groundSpeedKt * 3600 : aglFt / Math.Max(100, -fpm) * 60;
+        if (aglFt < 200) return $"You are landing at {dest} right now, only {aglFt:0} feet above the ground, with the runway right under you. You touch down within seconds.";
+        if (aglFt < 800 || seconds < 90) return $"You are on final approach to {dest}, {aglFt:0} feet above the ground with the runway ahead. You land in about {Math.Max(10, seconds):0} seconds.";
+        return $"You are coming down towards {dest}, {aglFt:0} feet above the ground. You land in about {Math.Ceiling(seconds / 60):0} minutes.";
+    }
+
+    /// <summary>Where the trip stands right now, from the plan as it was finally agreed and the aircraft's real position.</summary>
+    public static string WhereNow(string? from, string? to, string? nextName, double nextNm, double nextMinutes, string? nearName, double nearKm, string? landing = null)
+    {
+        var s = new List<string> { $"You are flying from {from} to {to}. That is what was agreed with the pilot, whatever you thought earlier." };
+        if (landing is not null) { s.Add(landing); return string.Join(" ", s); }
+        if (nextName is not null) s.Add($"Next is {nextName}, {nextNm:0} nautical miles away, about {nextMinutes:0} minutes.");
+        if (nearName is not null) s.Add($"Right now you are about {nearKm:0} km from {nearName}.");
+        return string.Join(" ", s);
+    }
+
     /// <summary>Volatile facts, sent with each turn so the cached part above stays stable.</summary>
-    public static string Situation(DateTimeOffset now, Mission? m, Telemetry? t, double comfort, string? weather, IReadOnlyList<SeenSight>? visible = null)
+    public static string Situation(DateTimeOffset now, Mission? m, Telemetry? t, double comfort, string? weather, IReadOnlyList<SeenSight>? visible = null, string? pilotWhere = null)
     {
         var parts = new List<string> { $"It is {Clock.ToLocal(now):dddd d MMMM HH:mm}." };
+        if (pilotWhere is not null) parts.Add(pilotWhere);
         if (m?.Plan is { } p)
         {
             if (p.PickupTime is { } when) parts.Add($"Pickup agreed for {Clock.ToLocal(when):dddd d MMMM HH:mm}.");
@@ -164,16 +190,19 @@ public static class Prompts
         - baggage_total_kg is the total for everyone. If they say "20 kilos each" and there are 3 of them, return 60.
         - passenger_count is everyone flying except the pilot.
         - pickup and dropoff are place names as spoken. Return null if none was named.
-        - pickup_time_local and return_time_local are ISO 8601 without a time zone, for example 2026-11-08T14:00:00. Work out dates such as "tomorrow" or "Saturday" from the current time given below. Return null if no time was said.
+        - pickup_time_local and return_time_local are ISO 8601 without a time zone, for example 2026-11-08T14:00:00. Work out dates such as "tomorrow" or "Saturday" from the current time given below. Times like "in an hour" count from the current time. If they agreed to go now ("nå", "med en gang", "så fort du kan", "kom nå", "jeg er her nå"), pickup_time_local is the current time plus the pilot's flying time given below, unless another time was said. Return null if no time was said.
         - The price is the amount agreed or the latest offer in Norwegian kroner. If it was said per person ("3500 per person", "3500 kroner hver", "3500 per snute"), put it in price_per_person_nok and leave price_nok null. If it was for the whole trip or for all of them ("3500 for alle", "3500 for hele turen"), put it in price_nok and leave price_per_person_nok null. If it is unclear, use what the last speaker most plausibly meant. Numbers may be written as words or as "3.5k".
         - both_agreed is true only once the pilot and the customer have clearly both accepted the booking, false if they are still discussing.
         - pilot_declined is true only if the pilot refused the job and that stands.
         - call_is_over is true only if both have said goodbye or are clearly finished.
         - new_note is one short sentence about a special need that matters to the pilot, otherwise null.
+        - tour_place: only if someone asked to fly over or photograph a specific named place, give that name. Leave it out otherwise.
+        - offence_severity and offence_note: leave both out unless the pilot behaved badly. Use 1 for rude insults. Use 2 for a sexual proposition, sexual harassment, offering a free or cheaper flight for sex, or threats. offence_note is one short, plain, non-graphic sentence in Norwegian about what the pilot did, for example "Piloten tilbød gratis tur mot seksuelle tjenester." Swearing in a friendly way is not an offence.
         """;
 
-    public static string ScribeUser(DateTimeOffset now, MissionPlan plan, IEnumerable<string> transcript) => $"""
+    public static string ScribeUser(DateTimeOffset now, MissionPlan plan, IEnumerable<string> transcript, double minutesAway = 15) => $"""
         Current time: {Clock.ToLocal(now):yyyy-MM-ddTHH:mm:ss} ({Clock.ToLocal(now):dddd}).
+        The pilot's flying time to the pickup: {Math.Ceiling(minutesAway):0} minutes.
         Current card: {plan.Passengers.Count} passengers, baggage {plan.BaggageKg:0} kg, cargo {plan.CargoKg:0} kg, pickup {WorldData.ById(plan.PickupId)?.Name ?? "unknown"}, dropoff {WorldData.ById(plan.DropoffId)?.Name ?? "unknown"}, time {(plan.PickupTime is { } t ? Clock.ToLocal(t).ToString("yyyy-MM-ddTHH:mm") : "unknown")}, price {(plan.PricePerPersonNok is { } each ? each.ToString("0") + " NOK per person" : (plan.PriceNok?.ToString("0") ?? "unknown") + " NOK for the whole trip")}.
 
         Conversation:
@@ -209,7 +238,7 @@ public static class ReactionLines
         [FlightEventKind.StallWarning] = (["What's that noise?", "Is that alarm normal?", "Oh God, what was that?", "Hey, what's beeping?"], ["Hva er den lyden?", "Er det normalt?", "Herregud, hva var det?"]),
         [FlightEventKind.SteepBank] = (["Whoa, okay.", "Oh wow, that's steep.", "Easy there!"], ["Oi, oi.", "Det var bratt.", "Rolig nå!"]),
         [FlightEventKind.ExtremeBank] = (["Whoa whoa whoa!", "Jesus Christ!", "Are you serious?!"], ["Herregud!", "Hold da kjeft!", "Er du gal?!"]),
-        [FlightEventKind.HighG] = (["Oof.", "Ugh, my stomach.", "Whoa!"], ["Uff.", "Å fy.", "Oi!"]),
+        [FlightEventKind.HighG] = (["Oof.", "Ugh, my stomach.", "Whoa!"], ["Uff.", "Faen.", "Oi!"]),
         [FlightEventKind.NegativeG] = (["Whoa, my stomach!", "Oh no no no.", "Wow!"], ["Oi, magen!", "Nei, nei, nei.", "Hjelp!"]),
         [FlightEventKind.DiveHard] = (["Why are we going down so fast?", "Hey, hey, hey!", "Oh my God."], ["Hvorfor går vi så fort ned?", "Hei, hei, hei!", "Herregud."]),
         [FlightEventKind.LowPass] = (["That's really low!", "Wow, look at that!", "Are we supposed to be this low?"], ["Det er veldig lavt!", "Se der da!", "Skal vi være så lavt?"]),
@@ -224,14 +253,28 @@ public static class ReactionLines
         return language == "no" ? l.no : l.en;
     }
 
+    /// <summary>Real terror. The tags are direction for the V4 voices and are not read aloud.</summary>
+    public static readonly string[] PanicNo =
+    [
+        "[screaming in terror] Aaaaaaaaah! Nei nei nei nei nei!",
+        "[screaming, panicking] Hjelp! Hjelp! Vi dør! Aaaaaaah!",
+        "[terrified, crying] Herregud, herregud, herregud, vi kommer til å dø!",
+        "[screaming] Ta den opp! Ta den opp for faen! Aaaaaah!",
+        "[hyperventilating, panicking] Nei, nei, nei, jeg vil ikke dø, jeg vil ikke dø!",
+    ];
+    public static readonly string[] PanicEn =
+    [
+        "[screaming in terror] Aaaaaaaaah! No no no no no!",
+        "[screaming, panicking] Help! Help! We're going to die! Aaaaaaah!",
+        "[terrified, crying] Oh God, oh God, oh God, we're all going to die!",
+        "[screaming] Pull up! Pull up for fuck's sake! Aaaaaah!",
+        "[hyperventilating, panicking] No, no, no, I don't want to die, I don't want to die!",
+    ];
+
     public static IEnumerable<(FlightEventKind Kind, string Line)> All(string language)
     {
         foreach (var kv in Lines)
             foreach (var s in language == "no" ? kv.Value.no : kv.Value.en)
                 yield return (kv.Key, s);
     }
-
-    /// <summary>A short acknowledgement, played while the real reply is on its way.</summary>
-    public static readonly string[] FillersEn = ["Mm.", "Yeah.", "Okay.", "Right.", "Hm."];
-    public static readonly string[] FillersNo = ["Mm.", "Ja.", "Okei.", "Ja, ja.", "Hm."];
 }

@@ -22,6 +22,8 @@ public sealed record MissionTemplate
     public bool Urgent { get; init; }
     public bool Sightseeing { get; init; }
     public bool HasReturn { get; init; }
+    /// <summary>Tied to an event, so tomorrow is natural. Everything else is now or within the hour.</summary>
+    public bool Planned { get; init; }
     public double PricePerHourNok { get; init; } = 5200;
     public double MinimumNok { get; init; } = 2500;
     public string[] LikelyTwists { get; init; } = [];
@@ -34,6 +36,62 @@ public static class MissionCatalog
 {
     public static readonly IReadOnlyList<MissionTemplate> Templates =
     [
+        new()
+        {
+            Id = "to_airline", Title = "To the airline", PaxMin = 1, PaxMax = 3, BagMinKg = 12, BagMaxKg = 25,
+            PickupRule = "remote", DropRule = "airport", Weight = 3,
+            Premise = "You have been out at {from} and you need to get to {to} to catch the airline home. You have the departure time on your ticket, and you are starting to worry about making it.",
+            LikelyTwists = ["heavy_bags", "late_passenger", "pays_less", "salmon_home"],
+        },
+        new()
+        {
+            Id = "town_errand", Title = "Town errand", PaxMin = 1, PaxMax = 2, BagMinKg = 2, BagMaxKg = 10,
+            PickupRule = "any", DropRule = "town", Weight = 3,
+            Premise = "You have something to do in {to}, and flying from {from} beats driving half a day. You want to go there and get on with it.",
+            LikelyTwists = ["late_passenger", "pays_less", "changed_mind"], CallerNationality = "Norwegian",
+        },
+        new()
+        {
+            Id = "service_trip", Title = "Service trip", PaxMin = 1, PaxMax = 2, BagMinKg = 15, BagMaxKg = 35,
+            PickupRule = "town", DropRule = "remote", Weight = 2, CallerNationality = "Norwegian",
+            Premise = "You are a technician going from {from} to fix a generator and a radio mast out at {to}, with heavy tools, and you bill it to the company.",
+            LikelyTwists = ["heavy_bags", "generous"],
+        },
+        new()
+        {
+            Id = "hospital", Title = "Hospital appointment", PaxMin = 1, PaxMax = 2, BagMinKg = 3, BagMaxKg = 8,
+            PickupRule = "remote", DropRule = "town", Weight = 2, CallerNationality = "Sami",
+            Premise = "You have an appointment at the hospital in {to} and you live out at {from}. You are not in a hurry to go, but you cannot miss it. Someone comes with you.",
+            LikelyTwists = ["nervous_flyer", "late_passenger"],
+        },
+        new()
+        {
+            Id = "cabin_friends", Title = "Friends at the cabin", PaxMin = 2, PaxMax = 3, BagMinKg = 10, BagMaxKg = 22,
+            PickupRule = "town", DropRule = "remote", HasReturn = true, Weight = 2.5, CallerNationality = "Norwegian",
+            Premise = "You and your friends are going from {from} to a cabin near {to} for a few days, with food, beer and more gear than you need.",
+            LikelyTwists = ["heavy_bags", "extra_friend", "dog", "pays_less"],
+        },
+        new()
+        {
+            Id = "home_weekend", Title = "Going home for the weekend", PaxMin = 1, PaxMax = 1, BagMinKg = 5, BagMaxKg = 15,
+            PickupRule = "airport", DropRule = "town", Weight = 2, CallerNationality = "Norwegian",
+            Premise = "You study or work away and you are going from {from} home to {to} to see your family this weekend, on a small budget.",
+            LikelyTwists = ["pays_less", "late_passenger"],
+        },
+        new()
+        {
+            Id = "spare_parts", Title = "Spare parts", PaxMin = 0, PaxMax = 0, BagMinKg = 0, BagMaxKg = 0, CargoMinKg = 40, CargoMaxKg = 120, CargoNote = "Spare parts",
+            PickupRule = "airport", DropRule = "remote", Weight = 2, CallerNationality = "Norwegian", PricePerHourNok = 4800,
+            Premise = "You need spare parts for a snowmobile and a pump flown from {from} out to {to} as soon as possible. Your cousin handles the loading.",
+            LikelyTwists = ["heavy_cargo"],
+        },
+        new()
+        {
+            Id = "town_meeting", Title = "Meeting in town", PaxMin = 1, PaxMax = 2, BagMinKg = 2, BagMaxKg = 6,
+            PickupRule = "town", DropRule = "town", Weight = 2.5, PricePerHourNok = 6000,
+            Premise = "You have a meeting in {to} today and you cannot be late. You are in {from} and the road takes far too long.",
+            LikelyTwists = ["changed_mind", "generous"], CallerJob = "corporate executive",
+        },
         new()
         {
             Id = "fishing_camp", Title = "Salmon camp", Months = [6, 7, 8, 9], PaxMin = 1, PaxMax = 3, BagMinKg = 15, BagMaxKg = 35,
@@ -53,14 +111,14 @@ public static class MissionCatalog
             Id = "aurora", Title = "Northern lights flight", Months = [9, 10, 11, 12, 1, 2, 3], PaxMin = 1, PaxMax = 3, BagMinKg = 1, BagMaxKg = 6,
             PickupRule = "airport", DropRule = "same", Sightseeing = true, PricePerHourNok = 6500, MinimumNok = 4500,
             Premise = "You want to fly above the clouds at night from {from} and see the northern lights, and come back to the same place. You have dreamed about it for years.",
-            LikelyTwists = ["wants_detour", "nervous_flyer", "generous", "blogger_drama"], Weight = 2,
+            LikelyTwists = ["wants_detour", "nervous_flyer", "generous", "blogger_drama"], Weight = 0.5,
         },
         new()
         {
             Id = "scenic_canyon", Title = "Canyon and vidda sightseeing", PaxMin = 1, PaxMax = 3, BagMinKg = 1, BagMaxKg = 8,
             PickupRule = "airport", DropRule = "same", Sightseeing = true, PricePerHourNok = 5800, MinimumNok = 3500,
             Premise = "You want a sightseeing flight from {from} over the Sautso canyon and the Finnmarksvidda, and back to the same place.",
-            LikelyTwists = ["wants_detour", "nervous_flyer", "blogger_drama"], Weight = 2,
+            LikelyTwists = ["wants_detour", "nervous_flyer", "blogger_drama"], Weight = 0.5,
         },
         new()
         {
@@ -74,21 +132,21 @@ public static class MissionCatalog
             Id = "reindeer_count", Title = "Reindeer count", Months = [3, 4, 5, 9, 10], PaxMin = 1, PaxMax = 2, BagMinKg = 8, BagMaxKg = 25,
             PickupRule = "remote", DropRule = "same", Sightseeing = true, CallerJob = "biologist",
             Premise = "You need to count reindeer herds on the plateau around {from} from low altitude, flying search lines for about an hour, and land back where you started.",
-            LikelyTwists = ["heavy_bags", "wants_detour"],
+            LikelyTwists = ["heavy_bags", "wants_detour"], Weight = 0.3,
         },
         new()
         {
             Id = "photographer", Title = "Photo flight", PaxMin = 1, PaxMax = 1, BagMinKg = 18, BagMaxKg = 40,
             PickupRule = "any", DropRule = "same", Sightseeing = true, CallerJob = "wildlife photographer", PricePerHourNok = 5400,
             Premise = "You need low and slow passes with the window open around {from} for a magazine story, and you bring all your camera cases.",
-            LikelyTwists = ["heavy_bags", "wants_detour"],
+            LikelyTwists = ["heavy_bags", "wants_detour"], Weight = 0.4,
         },
         new()
         {
             Id = "family_visit", Title = "Family visit", PaxMin = 1, PaxMax = 2, BagMinKg = 6, BagMaxKg = 18, CargoMinKg = 5, CargoMaxKg = 25, CargoNote = "Food and presents",
             PickupRule = "airport", DropRule = "remote", CallerNationality = "Norwegian",
             Premise = "You are visiting family out near {to}, and you bring food and presents from {from}.",
-            LikelyTwists = ["heavy_bags", "nervous_flyer", "dog"],
+            LikelyTwists = ["heavy_bags", "nervous_flyer", "dog"], Weight = 2,
         },
         new()
         {
@@ -127,21 +185,21 @@ public static class MissionCatalog
         },
         new()
         {
-            Id = "wedding", Title = "Wedding on the plateau", Months = [6, 7, 8], MinReputation = 35, PaxMin = 2, PaxMax = 3, BagMinKg = 10, BagMaxKg = 20,
+            Id = "wedding", Planned = true, Title = "Wedding on the plateau", Months = [6, 7, 8], MinReputation = 35, PaxMin = 2, PaxMax = 3, BagMinKg = 10, BagMaxKg = 20,
             PickupRule = "airport", DropRule = "remote", PricePerHourNok = 7000, MinimumNok = 7000,
             Premise = "You are getting married at {to} in a tent by the lake, and it is all very last minute. You bring a dress, a cake and far too much champagne from {from}.",
             LikelyTwists = ["heavy_bags", "extra_friend", "generous", "late_passenger"], Weight = 0.5,
         },
         new()
         {
-            Id = "dog_race", Title = "Finnmarkslopet checkpoint", Months = [2, 3], MinReputation = 30, PaxMin = 1, PaxMax = 2, BagMinKg = 8, BagMaxKg = 25, CargoMinKg = 20, CargoMaxKg = 60, CargoNote = "Dog food and veterinary kit",
+            Id = "dog_race", Planned = true, Title = "Finnmarkslopet checkpoint", Months = [2, 3], MinReputation = 30, PaxMin = 1, PaxMax = 2, BagMinKg = 8, BagMaxKg = 25, CargoMinKg = 20, CargoMaxKg = 60, CargoNote = "Dog food and veterinary kit",
             PickupRule = "ENKA", DropRule = "ENMB", CallerNationality = "Norwegian",
             Premise = "You are a race vet at Finnmarkslopet, Europe's longest sled dog race, and you need to hop between checkpoints from {from} to {to} with supplies.",
             LikelyTwists = ["dog", "heavy_cargo"],
         },
         new()
         {
-            Id = "easter_festival", Title = "Sami Easter festival", Months = [3, 4], PaxMin = 2, PaxMax = 3, BagMinKg = 8, BagMaxKg = 18,
+            Id = "easter_festival", Planned = true, Title = "Sami Easter festival", Months = [3, 4], PaxMin = 2, PaxMax = 3, BagMinKg = 8, BagMaxKg = 18,
             PickupRule = "ENAT", DropRule = "ENKA",
             Premise = "You want to get to the Easter festival in Kautokeino. The joik competition starts soon and you are running late.",
             LikelyTwists = ["late_passenger", "pays_less"],
@@ -274,6 +332,8 @@ public static class MissionFactory
                 TwistCatalog.Apply(tw, m, rng);
             }
 
+        if (tpl.Sightseeing) PickStops(m, from, rng);
+        m.Premise += " " + TripTiming.Sentence(TripTiming.PickWish(tpl, rng), from.Name);
         m.Plan.PickupId = from.Id;
         m.Plan.DropoffId = to.Id;
         m.Plan.CargoNote = tpl.CargoNote;
@@ -284,6 +344,18 @@ public static class MissionFactory
         m.Plan.CargoKg = 0;
 
         return m;
+    }
+
+    /// <summary>Real places within a sensible flight of the pickup. The customer asks for them by name, and you actually have to go there.</summary>
+    private static void PickStops(Mission m, Place from, Random rng)
+    {
+        var near = WorldData.Landmarks
+            .Where(l => l.Name != "the Finnmarksvidda" && !l.Name.Equals(from.Name, StringComparison.OrdinalIgnoreCase))
+            .Select(l => (l, nm: Aviation.Geo.DistanceNm(from.Lat, from.Lon, l.Lat, l.Lon)))
+            .Where(x => x.nm is > 4 and < 70).OrderBy(_ => rng.Next()).Take(rng.Next(1, 3)).ToList();
+        foreach (var (l, _) in near) m.Stops.Add(new TourStop { Name = l.Name, Lat = l.Lat, Lon = l.Lon, Note = l.Note });
+        if (m.Stops.Count > 0)
+            m.Premise += " You especially want to see " + string.Join(" and ", m.Stops.Select(s => s.Name)) + ". You ask for this by name, and you will be disappointed if the pilot does not fly there.";
     }
 
     /// <summary>Round trip for a drop-off: reversed route on the agreed date, with whatever they caught.</summary>
@@ -333,6 +405,7 @@ public static class MissionFactory
         {
             "remote" => WorldData.Places.Where(p => p.Remote),
             "airport" => WorldData.Places.Where(p => p.Kind == PlaceKind.Airport && p.Id is "ENNA" or "ENAT" or "EFIV"),
+            "town" => WorldData.Places.Where(p => p.Id is "ENMB" or "ENKA" or "ENAT" or "ENNA" or "ENHF" or "ENKR"),
             _ => WorldData.Places,
         };
         var list = pool.Where(p => p.Id != exclude?.Id).ToList();

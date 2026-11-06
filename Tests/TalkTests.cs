@@ -191,6 +191,30 @@ public class DialectTests
     public void Quick_reactions_follow_the_dialect(string line, Dialect d, string want) => Assert.Equal(want, Dialects.Adapt(line, d));
 }
 
+public class NameFixerTests
+{
+    private static readonly NameFixer Fixer = new(["Mollisjok", "Karasjok", "Honningsvåg", "Lakselv", "Kirkenes", "Alta", "Hammerfest", "Mollisjok lodge", "the Sautso canyon", "Kamilla Hansen", "Per Olsen"]);
+
+    [Theory]   // the first four are word for word from real calls
+    [InlineData("Nei, jeg sitter på rullebanen i målersjokk og venter på deg.", "Nei, jeg sitter på rullebanen i Mollisjok og venter på deg.")]
+    [InlineData("så blir dere igjen i Mollersjok?", "så blir dere igjen i Mollisjok?")]
+    [InlineData("Men jeg kan fly deg fra Alta til Molesjok.", "Men jeg kan fly deg fra Alta til Mollisjok.")]
+    [InlineData("Nei, honningsåk det gidder jeg ikke.", "Nei, Honningsvåg det gidder jeg ikke.")]
+    [InlineData("Vi flyr til Karasjokk i dag", "Vi flyr til Karasjok i dag")]
+    [InlineData("Er det Kamill som kommer?", "Er det Kamilla som kommer?")]
+    [InlineData("rett til Mollis jokk nå", "rett til Mollisjok nå")]
+    public void Puts_real_names_back(string heard, string expected) => Assert.Equal(expected, Fixer.Fix(heard));
+
+    [Theory]
+    [InlineData("Ja, men det går helt bra, vet du.")]
+    [InlineData("Jeg sitter på rullebanen og venter på flyplassen.")]
+    [InlineData("3500 kroner per person, og laksene er store.")]
+    [InlineData("Hold kjeft, de kirkene er gamle, alle sammen.")]
+    [InlineData("Har du bagasjen klar, så kommer jeg nå med en gang.")]
+    [InlineData("Mollisjok og Karasjok er allerede riktig.")]
+    public void Leaves_ordinary_words_alone(string heard) => Assert.Equal(heard, Fixer.Fix(heard));
+}
+
 public class SpeechGateTests
 {
     private static readonly float[] Frame = new float[SpeechGate.FrameSamples];
