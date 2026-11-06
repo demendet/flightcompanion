@@ -50,7 +50,7 @@ public sealed class Director(CareerState state, Random rng)
                 caller.Trust = Math.Clamp(caller.Trust - 35, -100, 100);
                 caller.Memories.Add(new MemoryNote(now, "The pilot never turned up at all, you had to make other arrangements."));
                 state.Reputation = Math.Clamp(state.Reputation - 4, 0, 100);
-                return new TextMessage(caller, $"We waited two and a half hours at {m.Pickup?.Name}. We found another way. Do not call me.");
+                return new TextMessage(caller, L.F("We waited two and a half hours at {0}. We found another way. Do not call me.", m.Pickup?.Name));
             }
             if (minutesLate > 25 && !m.LateCallMade && !ctx.PassengersAboard)
             {
@@ -60,7 +60,7 @@ public sealed class Director(CareerState state, Random rng)
             if (minutesLate > -40 && minutesLate < -15 && !m.ReminderSent)
             {
                 m.ReminderSent = true;
-                return new TextMessage(caller, $"See you at {m.Pickup?.Name} at {Clock.ToLocal(due):HH:mm}. We are ready!");
+                return new TextMessage(caller, L.F("See you at {0} at {1}. We are ready!", m.Pickup?.Name, Clock.ToLocal(due).ToString("HH:mm")));
             }
         }
 
@@ -213,7 +213,7 @@ public static class ArcDirector
             var m = MissionFactory.Create(tpl, new CareerView(state), rng, now, lead);
             m.ArcId = arc.Id;
             m.ArcEpisode = done;
-            m.Title = ep.TitleOverride;
+            m.Title = L.T(ep.TitleOverride);
             m.Premise = ep.Premise;
             if (ep.Secret is not null) m.SecretsForCaller.Add(ep.Secret);
             state.Missions.Add(m);

@@ -158,9 +158,9 @@ public static class PlanEvaluator
         var extra = new List<Finding>(load.Findings);
         if (fuelGal < fuel.RequiredGal - 0.05)
             extra.Add(new(fuelGal < fuel.TripGal + fuel.TaxiGal ? FindingLevel.Stop : FindingLevel.Caution, "fuel",
-                $"Fuel {fuelGal:0} gal, needs {fuel.RequiredGal:0} gal with reserve"));
+                L.F("Fuel {0:0} gal, needs {1:0} gal with reserve", fuelGal, fuel.RequiredGal)));
         if (fuel.RequiredGal > a.UsableFuelGal)
-            extra.Add(new(FindingLevel.Stop, "range", $"Trip needs {fuel.RequiredGal:0} gal, tanks hold {a.UsableFuelGal:0}"));
+            extra.Add(new(FindingLevel.Stop, "range", L.F("Trip needs {0:0} gal, tanks hold {1:0}", fuel.RequiredGal, a.UsableFuelGal)));
         return (load with { Findings = extra }, fuel, nm);
     }
 }

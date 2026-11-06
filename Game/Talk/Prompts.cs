@@ -12,7 +12,8 @@ public enum TalkMode { Phone, InPerson, Intercom, Debrief }
 /// <summary>Who is speaking, and the rules of the scene. Stable through a call, so the API can cache it.</summary>
 public static class Prompts
 {
-    public static string Speaker(Person who, Mission? m, CareerState c, TalkMode mode, string? reason)
+    /// <param name="talkLanguage">"no": everyone speaks Norwegian. "en": everyone speaks English. "mixed": as in real life.</param>
+    public static string Speaker(Person who, Mission? m, CareerState c, TalkMode mode, string? reason, string talkLanguage = "mixed")
     {
         var sb = new System.Text.StringBuilder();
         sb.AppendLine($"""
@@ -29,7 +30,17 @@ public static class Prompts
             """);
         sb.AppendLine("WHO YOU ARE");
         sb.AppendLine(who.DescribeForPrompt());
-        if (who.Language == "no")
+        if (talkLanguage == "no")
+        {
+            sb.AppendLine("LANGUAGE: every word you say is in Norwegian bokmal, always, and never in English, whatever the pilot says.");
+            sb.AppendLine("Write numbers, weights, prices and times out as words, so a voice can read them: to hundre kilo, halv tre, fem tusen kroner.");
+            sb.AppendLine(who.Language == "no"
+                ? "It is your own language, in a natural everyday northern way."
+                : $"You are {who.Nationality} but you have learned Norwegian, simple and a bit imperfect, with a word from home slipping in now and then. Where the description above mentions English, apply that manner to your Norwegian. Do not apologise for it.");
+        }
+        else if (talkLanguage == "en")
+            sb.AppendLine("LANGUAGE: every word you say is in English, whatever the pilot says. Write numbers and times out as words so a voice can read them.");
+        else if (who.Language == "no")
             sb.AppendLine("You speak Norwegian bokmal as your own language. If the pilot speaks English you can switch to English, reluctantly.");
         else if (who.SpeaksNorwegian)
             sb.AppendLine("You speak English and Norwegian. Answer in the language the pilot uses.");
@@ -127,11 +138,11 @@ public static class Prompts
         """;
 
     public static string MemorySystem(Person who) => $"""
-        You are writing one private memory for {who.Name} after a flight with a bush pilot. Write one short sentence, in the first person's plain words but referring to yourself as "you", about what you will remember about this pilot and this flight, for example: "The pilot flew you through the snow shower and you were sick with fear, but landed like a feather." Return only that sentence.
+        You are writing one private memory for {who.Name} after a flight with a bush pilot. Write one short plain sentence in English, referring to {who.Name} as "you", about what you will remember about this pilot and this flight, for example: "The pilot flew you through the snow shower and you were sick with fear, but landed like a feather." Return only that sentence.
         """;
 
-    public static string QuoteSystem(Person who) => $"""
-        You are {who.DescribeForPrompt()} You just flew with a bush pilot. Write a short honest review line, as you would say it to a friend, in your voice, in {(who.Language == "no" ? "Norwegian" : "English")}. One sentence. Return only that sentence.
+    public static string QuoteSystem(Person who, string talkLanguage = "mixed") => $"""
+        You are {who.DescribeForPrompt()} You just flew with a bush pilot. Write a short honest review line, as you would say it to a friend, in your voice, in {(talkLanguage == "no" || (talkLanguage != "en" && who.Language == "no") ? "Norwegian" : "English")}. One sentence. Return only that sentence.
         """;
 
     public static string FlightFacts(Mission m, FlightReview r, IEnumerable<string> tail) => $"""

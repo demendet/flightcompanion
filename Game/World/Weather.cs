@@ -36,14 +36,14 @@ public sealed record WeatherPoint
     public string Summary()
     {
         var parts = new List<string>();
-        if (WindKt is { } w) parts.Add(WindFromDeg is { } d ? $"wind {d:000} at {w:0} kt" : $"wind {w:0} kt");
-        if (GustKt is { } g && g > (WindKt ?? 0) + 4) parts.Add($"gusting {g:0}");
-        if (VisibilityKm is { } v) parts.Add(v >= 10 ? "visibility 10 km or more" : $"visibility {v:0.#} km");
-        if (CeilingFt is { } c) parts.Add($"ceiling {c:0} ft");
-        else if (Source == "metar") parts.Add("no low ceiling");
-        if (TempC is { } t) parts.Add($"{t:0} C");
-        if (SnowfallCm is > 0.05) parts.Add("snow");
-        else if (PrecipMm is > 0.1) parts.Add("rain");
+        if (WindKt is { } w) parts.Add(WindFromDeg is { } d ? L.F("wind {0:000} at {1:0} kt", d, w) : L.F("wind {0:0} kt", w));
+        if (GustKt is { } g && g > (WindKt ?? 0) + 4) parts.Add(L.F("gusting {0:0}", g));
+        if (VisibilityKm is { } v) parts.Add(v >= 10 ? L.T("visibility 10 km or more") : L.F("visibility {0:0.#} km", v));
+        if (CeilingFt is { } c) parts.Add(L.F("ceiling {0:0} ft", c));
+        else if (Source == "metar") parts.Add(L.T("no low ceiling"));
+        if (TempC is { } t) parts.Add(L.F("{0:0} C", t));
+        if (SnowfallCm is > 0.05) parts.Add(L.T("snow"));
+        else if (PrecipMm is > 0.1) parts.Add(L.T("rain"));
         return string.Join(", ", parts);
     }
 }
@@ -140,9 +140,9 @@ public static class WeatherAdvice
     public static WeatherVerdict Judge(WeatherPoint? p, Place place, DateTimeOffset when)
     {
         bool dark = Sun.IsDark(when, place.Lat, place.Lon);
-        if (p is null) return new(FlightCategory.Unknown, dark, dark ? "No weather data, and it is dark" : "No weather data");
+        if (p is null) return new(FlightCategory.Unknown, dark, L.T(dark ? "No weather data, and it is dark" : "No weather data"));
         string text = p.Summary();
-        if (dark) text += ", dark";
+        if (dark) text += L.T(", dark");
         return new(p.Category, dark, text);
     }
 }

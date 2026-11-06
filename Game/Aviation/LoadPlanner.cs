@@ -1,3 +1,5 @@
+using static FlightCompanion.Game.L;
+
 namespace FlightCompanion.Game.Aviation;
 
 public enum FindingLevel { Info, Caution, Stop }
@@ -62,7 +64,7 @@ public static class LoadPlanner
         var pax = r.PassengerKg.OrderByDescending(k => k).ToArray();
         for (int i = 0; i < pax.Length && i < seats.Length; i++) stationLb[seats[i]] = Units.KgToLb(pax[i]);
         if (pax.Length > seats.Length)
-            findings.Add(new(FindingLevel.Stop, "seats", $"{pax.Length} passengers but only {seats.Length} seats"));
+            findings.Add(new(FindingLevel.Stop, "seats", F("{0} passengers but only {1} seats", pax.Length, seats.Length)));
 
         // Baggage fills the forward area first, then the rear one, within both placard limits.
         double bagLeft = Units.KgToLb(r.BaggageKg);
@@ -77,7 +79,7 @@ public static class LoadPlanner
         }
         double overflow = bagLeft;
         if (overflow > 0.5)
-            findings.Add(new(FindingLevel.Stop, "baggage", $"{Units.LbToKg(overflow):0} kg of baggage has no legal place to go"));
+            findings.Add(new(FindingLevel.Stop, "baggage", F("{0:0} kg of baggage has no legal place to go", Units.LbToKg(overflow))));
 
         double weight = a.EmptyWeightLb, moment = a.EmptyWeightLb * a.EmptyArmIn;
         for (int i = 0; i < a.Stations.Length; i++)
@@ -101,23 +103,23 @@ public static class LoadPlanner
         double over = Math.Max(0, toLb - a.MaxGrossLb);
         if (over > 0)
             findings.Add(new(over > 110 ? FindingLevel.Stop : FindingLevel.Caution, "gross",
-                $"{Units.LbToKg(over):0} kg over maximum takeoff weight"));
+                F("{0:0} kg over maximum takeoff weight", Units.LbToKg(over))));
         double fwd = a.ForwardLimitAt(toLb);
-        if (toCg > a.AftLimitIn) findings.Add(new(FindingLevel.Stop, "aft", $"CG {toCg - a.AftLimitIn:0.0} in behind the aft limit, tail heavy"));
-        if (toCg < fwd) findings.Add(new(FindingLevel.Stop, "fwd", $"CG {fwd - toCg:0.0} in ahead of the forward limit"));
-        if (ldgCg > a.AftLimitIn) findings.Add(new(FindingLevel.Stop, "aftland", $"CG moves behind the aft limit as fuel burns, {ldgCg - a.AftLimitIn:0.0} in at landing"));
+        if (toCg > a.AftLimitIn + 0.05) findings.Add(new(FindingLevel.Stop, "aft", F("CG {0:0.0} in behind the aft limit, tail heavy", toCg - a.AftLimitIn)));
+        if (toCg < fwd - 0.05) findings.Add(new(FindingLevel.Stop, "fwd", F("CG {0:0.0} in ahead of the forward limit", fwd - toCg)));
+        if (ldgCg > a.AftLimitIn + 0.05 && toCg <= a.AftLimitIn + 0.05) findings.Add(new(FindingLevel.Stop, "aftland", F("CG moves behind the aft limit as fuel burns, {0:0.0} in at landing", ldgCg - a.AftLimitIn)));
 
         double toM = TakeoffDistanceM(a, toLb, r.Departure, r.OatC);
         double ldM = LandingDistanceM(a, ldgLb, r.Arrival, r.OatC);
         if (r.Departure is { } dep)
         {
-            if (toM > dep.LengthM) findings.Add(new(FindingLevel.Stop, "todist", $"Needs {toM:0} m to clear 50 ft, the strip has {dep.LengthM:0} m"));
-            else if (toM > dep.LengthM * 0.8) findings.Add(new(FindingLevel.Caution, "todist", $"Takeoff {toM:0} m of {dep.LengthM:0} m, little margin"));
+            if (toM > dep.LengthM) findings.Add(new(FindingLevel.Stop, "todist", F("Needs {0:0} m to clear 50 ft, the strip has {1:0} m", toM, dep.LengthM)));
+            else if (toM > dep.LengthM * 0.8) findings.Add(new(FindingLevel.Caution, "todist", F("Takeoff {0:0} m of {1:0} m, little margin", toM, dep.LengthM)));
         }
         if (r.Arrival is { } arr)
         {
-            if (ldM > arr.LengthM) findings.Add(new(FindingLevel.Stop, "lddist", $"Needs {ldM:0} m to land, the strip has {arr.LengthM:0} m"));
-            else if (ldM > arr.LengthM * 0.8) findings.Add(new(FindingLevel.Caution, "lddist", $"Landing {ldM:0} m of {arr.LengthM:0} m, little margin"));
+            if (ldM > arr.LengthM) findings.Add(new(FindingLevel.Stop, "lddist", F("Needs {0:0} m to land, the strip has {1:0} m", ldM, arr.LengthM)));
+            else if (ldM > arr.LengthM * 0.8) findings.Add(new(FindingLevel.Caution, "lddist", F("Landing {0:0} m of {1:0} m, little margin", ldM, arr.LengthM)));
         }
 
         return new LoadResult

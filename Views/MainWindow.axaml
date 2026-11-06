@@ -1,361 +1,370 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
-        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:vm="using:FlightCompanion.ViewModels"
-        mc:Ignorable="d" d:DesignWidth="1400" d:DesignHeight="900"
+        xmlns:v="using:FlightCompanion.Views"
         x:Class="FlightCompanion.Views.MainWindow"
-        x:DataType="vm:MainWindowViewModel"
-        Title="Flight Companion — Finnmark Bush Ops"
-        Background="{StaticResource AppBg}"
-        WindowState="Maximized">
+        x:DataType="vm:MainViewModel"
+        Title="Flight Companion"
+        Width="1440" Height="900" MinWidth="1120" MinHeight="680"
+        Background="{StaticResource Night}">
 
-    <Design.DataContext>
-        <vm:MainWindowViewModel />
-    </Design.DataContext>
+    <Grid RowDefinitions="Auto,Auto,*,Auto">
 
-    <Grid RowDefinitions="Auto,*">
-
-        <!-- ==================== Header bar ==================== -->
-        <Border Grid.Row="0" Background="{StaticResource HeaderGradient}"
-                BorderBrush="{StaticResource StrokeSoft}" BorderThickness="0,0,0,1"
-                Padding="24,0" Height="64"
-                BoxShadow="0 2 18 0 #40000000">
-            <Grid ColumnDefinitions="Auto,*,Auto" VerticalAlignment="Center">
-                <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
-                    <Border Width="38" Height="38" CornerRadius="10" Background="{StaticResource AccentGradient}"
-                            VerticalAlignment="Center">
-                        <TextBlock Text="✈" FontSize="20" Foreground="#FF06222B"
-                                   HorizontalAlignment="Center" VerticalAlignment="Center" />
-                    </Border>
-                    <StackPanel VerticalAlignment="Center">
-                        <TextBlock Text="FLIGHT COMPANION" FontSize="17" FontWeight="Bold"
-                                   Foreground="{StaticResource TextPrimary}" LetterSpacing="1" />
-                        <TextBlock Text="Finnmark Bush Charter · MSFS 2024" FontSize="11"
-                                   Foreground="{StaticResource TextMuted}" />
+        <!-- Who you are and how the business is doing -->
+        <Border Grid.Row="0" Background="{StaticResource Panel}" BorderBrush="{StaticResource Line}" BorderThickness="0,0,0,1" Padding="20,10">
+            <Grid ColumnDefinitions="Auto,*,Auto">
+                <StackPanel Orientation="Horizontal" Spacing="26" VerticalAlignment="Center">
+                    <TextBlock Classes="big" Text="{Binding Pic.Company}" />
+                    <TextBlock Classes="big" Text="{Binding Pic.Cash}" Foreground="{Binding Pic.CashBrush}" />
+                    <StackPanel Width="210" VerticalAlignment="Center" Spacing="3">
+                        <TextBlock Classes="quiet" Text="{Binding Pic.Rank}" />
+                        <ProgressBar Minimum="0" Maximum="100" Value="{Binding Pic.Reputation}" Height="4" MinWidth="0" />
                     </StackPanel>
+                    <TextBlock Classes="quiet" VerticalAlignment="Center" Text="{Binding Pic.Career}" />
                 </StackPanel>
-
-                <!-- Status readouts -->
-                <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-                    <Border Background="{StaticResource SurfaceInput}" CornerRadius="20" Padding="12,6"
-                            BorderBrush="{StaticResource StrokeSoft}" BorderThickness="1">
-                        <StackPanel Orientation="Horizontal" Spacing="8">
-                            <Ellipse Width="9" Height="9" VerticalAlignment="Center"
-                                     Fill="{StaticResource SuccessGreen}" IsVisible="{Binding IsConnected}" />
-                            <Ellipse Width="9" Height="9" VerticalAlignment="Center"
-                                     Fill="#FF5A6678" IsVisible="{Binding !IsConnected}" />
-                            <TextBlock Text="MSFS" FontSize="12" FontWeight="SemiBold"
-                                       Foreground="{StaticResource TextPrimary}" VerticalAlignment="Center" />
-                        </StackPanel>
-                    </Border>
-                    <Border Background="{StaticResource SurfaceInput}" CornerRadius="20" Padding="12,6"
-                            BorderBrush="{StaticResource StrokeSoft}" BorderThickness="1">
-                        <StackPanel Orientation="Horizontal" Spacing="8">
-                            <Ellipse Width="9" Height="9" VerticalAlignment="Center"
-                                     Fill="{StaticResource SuccessGreen}" IsVisible="{Binding IsSignalRConnected}" />
-                            <Ellipse Width="9" Height="9" VerticalAlignment="Center"
-                                     Fill="#FF5A6678" IsVisible="{Binding !IsSignalRConnected}" />
-                            <TextBlock Text="MULTIPLAYER" FontSize="12" FontWeight="SemiBold"
-                                       Foreground="{StaticResource TextPrimary}" VerticalAlignment="Center" />
-                        </StackPanel>
-                    </Border>
+                <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="2" VerticalAlignment="Center">
+                    <Button Classes="nav" Content="{v:Tr 'Operations'}" Command="{Binding GoBoard}" />
+                    <Button Classes="nav" Content="{v:Tr 'People'}" Command="{Binding GoPeople}" />
+                    <Button Classes="nav" Content="{v:Tr 'Logbook'}" Command="{Binding GoLogbook}" />
+                    <Button Classes="nav" Content="{v:Tr 'Money'}" Command="{Binding GoMoney}" />
+                    <Button Classes="nav" Content="{v:Tr 'Settings'}" Command="{Binding GoSettings}" />
                 </StackPanel>
             </Grid>
         </Border>
 
-        <!-- ==================== Body ==================== -->
-        <Grid Grid.Row="1" ColumnDefinitions="340,*,380">
+        <Border Grid.Row="1" Background="{StaticResource Signal}" Padding="20,8" IsVisible="{Binding Pic.NeedKeys, FallbackValue=False}">
+            <Grid ColumnDefinitions="*,Auto">
+                <TextBlock Foreground="{StaticResource SignalInk}" VerticalAlignment="Center"
+                           Text="{v:Tr 'The phone stays quiet until your Claude and ElevenLabs keys are in Settings.'}" />
+                <Button Grid.Column="1" Content="{v:Tr 'Open Settings'}" Command="{Binding GoSettings}" Background="{StaticResource SignalInk}" Foreground="{StaticResource Signal}" />
+            </Grid>
+        </Border>
 
-            <!-- Left: Ops -->
-            <ScrollViewer Grid.Column="0" Padding="16">
-                <StackPanel Spacing="14">
+        <!-- Operations -->
+        <Grid Grid.Row="2" ColumnDefinitions="340,*,360" IsVisible="{Binding OnBoard}">
 
-                    <!-- Testing -->
-                    <Border Classes="card">
-                        <StackPanel Spacing="10">
-                            <TextBlock Classes="overline" Text="TESTING" />
-                            <Button Content="📞  Simulate Incoming Call" Classes="accent"
-                                    Command="{Binding TestCallCommand}" HorizontalAlignment="Stretch" />
-                            <TextBlock Classes="muted" Text="Triggers a caller instantly instead of waiting for the timer."
-                                       TextWrapping="Wrap" />
-                        </StackPanel>
-                    </Border>
+            <!-- The phone -->
+            <Border Grid.Column="0" Background="{StaticResource Panel}" BorderBrush="{StaticResource Line}" BorderThickness="0,0,1,0" Padding="18">
+                <Grid RowDefinitions="Auto,Auto,*,Auto,Auto">
+                    <StackPanel Spacing="2">
+                        <TextBlock Classes="title" Text="{Binding Pic.PhoneTitle}" />
+                        <TextBlock Classes="quiet" Text="{Binding Pic.PhoneSub}" />
+                    </StackPanel>
 
-                    <!-- MSFS Connection -->
-                    <Border Classes="card">
-                        <StackPanel Spacing="10">
-                            <TextBlock Classes="overline" Text="MSFS CONNECTION" />
-                            <Button Content="{Binding ConnectButtonText}" Classes="accent"
-                                    Command="{Binding ConnectCommand}" HorizontalAlignment="Stretch" />
-                            <TextBlock Text="{Binding ConnectionStatus}" Classes="muted" TextWrapping="Wrap" />
-                        </StackPanel>
-                    </Border>
+                    <StackPanel Grid.Row="1" Spacing="8" Margin="0,14,0,10">
+                        <Grid ColumnDefinitions="*,8,*" IsVisible="{Binding Pic.IsRinging, FallbackValue=False}">
+                            <Button Classes="go" Content="{v:Tr 'Answer'}" Command="{Binding Answer}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
+                            <Button Grid.Column="2" Content="{v:Tr 'Decline'}" Command="{Binding Decline}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
+                        </Grid>
+                        <Button Content="{Binding Pic.HangUpLabel}" Command="{Binding HangUp}" IsVisible="{Binding Pic.IsTalking, FallbackValue=False}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
+                        <Grid ColumnDefinitions="*,8,*" IsVisible="{Binding Pic.IsIdle, FallbackValue=False}">
+                            <Button Content="{v:Tr 'Look for work'}" Command="{Binding RequestJob}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
+                            <Button Grid.Column="2" Content="{Binding Pic.MicTestLabel}" Command="{Binding TestMic}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
+                        </Grid>
+                    </StackPanel>
 
-                    <!-- Multiplayer -->
-                    <Border Classes="card">
-                        <StackPanel Spacing="10">
-                            <TextBlock Classes="overline" Text="MULTIPLAYER" />
-                            <TextBox Text="{Binding PlayerName}" Watermark="Your pilot name" />
-                            <Button Content="{Binding MultiplayerButtonText}" Classes="ghost"
-                                    Command="{Binding ConnectMultiplayerCommand}" HorizontalAlignment="Stretch" />
-                            <TextBlock Text="{Binding MultiplayerStatus}" Classes="muted" TextWrapping="Wrap" />
-                            <Border Height="1" Background="{StaticResource StrokeSoft}" Margin="0,2" />
-                            <Button Content="Create New Session" Classes="success"
-                                    Command="{Binding CreateSessionCommand}" HorizontalAlignment="Stretch" />
-                            <Grid ColumnDefinitions="*,Auto">
-                                <TextBox Grid.Column="0" Text="{Binding SessionId}" Watermark="Session ID" />
-                                <Button Grid.Column="1" Content="Join" Classes="ghost"
-                                        Command="{Binding JoinSessionCommand}" Margin="6,0,0,0" />
-                            </Grid>
-                        </StackPanel>
-                    </Border>
+                    <ScrollViewer Grid.Row="2" x:Name="ChatScroll">
+                        <ItemsControl ItemsSource="{Binding Pic.Chat}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="vm:ChatRow">
+                                    <StackPanel Margin="0,0,0,10" Spacing="1">
+                                        <TextBlock Classes="quiet" FontSize="12" Text="{Binding Who}" Foreground="{Binding WhoBrush}" />
+                                        <TextBlock Text="{Binding Text}" LineHeight="20" />
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
 
-                    <!-- Aircraft data -->
-                    <Border Classes="card">
-                        <StackPanel Spacing="12">
-                            <TextBlock Classes="overline" Text="AIRCRAFT TELEMETRY" />
-                            <Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto,Auto" >
-                                <StackPanel Grid.Row="0" Grid.Column="0" Margin="0,0,0,10">
-                                    <TextBlock Classes="muted" Text="LATITUDE" FontSize="10" />
-                                    <TextBlock Text="{Binding FormattedLatitude}" Foreground="{StaticResource TextPrimary}" FontFamily="Consolas" FontSize="13" />
-                                </StackPanel>
-                                <StackPanel Grid.Row="0" Grid.Column="1" Margin="0,0,0,10">
-                                    <TextBlock Classes="muted" Text="LONGITUDE" FontSize="10" />
-                                    <TextBlock Text="{Binding FormattedLongitude}" Foreground="{StaticResource TextPrimary}" FontFamily="Consolas" FontSize="13" />
-                                </StackPanel>
-                                <StackPanel Grid.Row="1" Grid.Column="0" Margin="0,0,0,10">
-                                    <TextBlock Classes="muted" Text="ALTITUDE" FontSize="10" />
-                                    <TextBlock Text="{Binding FormattedAltitude}" Foreground="{StaticResource Accent}" FontFamily="Consolas" FontSize="13" />
-                                </StackPanel>
-                                <StackPanel Grid.Row="1" Grid.Column="1" Margin="0,0,0,10">
-                                    <TextBlock Classes="muted" Text="GROUND SPEED" FontSize="10" />
-                                    <TextBlock Text="{Binding FormattedSpeed}" Foreground="{StaticResource Accent}" FontFamily="Consolas" FontSize="13" />
-                                </StackPanel>
-                                <StackPanel Grid.Row="2" Grid.Column="0">
-                                    <TextBlock Classes="muted" Text="HEADING" FontSize="10" />
-                                    <TextBlock Text="{Binding FormattedHeading}" Foreground="{StaticResource TextPrimary}" FontFamily="Consolas" FontSize="13" />
-                                </StackPanel>
-                            </Grid>
-                        </StackPanel>
-                    </Border>
+                    <TextBlock Grid.Row="3" Classes="quiet" FontStyle="Italic" Margin="0,8,0,0" Text="{Binding Pic.Partial}" IsVisible="{Binding Pic.HasPartial, FallbackValue=False}" />
 
-                </StackPanel>
-            </ScrollViewer>
-
-            <!-- Center: Map -->
-            <Border Grid.Column="1" Classes="card" Margin="0,16" Padding="0" ClipToBounds="True">
-                <Grid RowDefinitions="Auto,*">
-                    <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="16,12">
-                        <StackPanel Grid.Column="0">
-                            <TextBlock Classes="overline" Text="LIVE MAP" />
-                            <TextBlock Text="Finnmarksvidda · pickup routes" Classes="muted" FontSize="11" />
-                        </StackPanel>
-                        <Border Grid.Column="1" Background="{StaticResource SurfaceInput}" CornerRadius="20"
-                                Padding="10,5" BorderBrush="{StaticResource StrokeSoft}" BorderThickness="1"
-                                VerticalAlignment="Center">
-                            <StackPanel Orientation="Horizontal" Spacing="6">
-                                <Border Width="14" Height="3" Background="{StaticResource Accent}" VerticalAlignment="Center" CornerRadius="2" />
-                                <TextBlock Text="Active route" Classes="muted" FontSize="11" VerticalAlignment="Center" />
-                            </StackPanel>
-                        </Border>
-                    </Grid>
-                    <Border Grid.Row="1" CornerRadius="0,0,12,12" ClipToBounds="True">
-                        <ContentControl Name="MapContainer" />
-                    </Border>
+                    <StackPanel Grid.Row="4" Spacing="6" Margin="0,12,0,0">
+                        <ProgressBar Minimum="0" Maximum="1" Value="{Binding MicLevel}" Height="3" MinWidth="0" />
+                        <ItemsControl ItemsSource="{Binding Pic.Statuses}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="vm:StatusRow">
+                                    <Grid ColumnDefinitions="14,62,*" Margin="0,1">
+                                        <Ellipse Width="7" Height="7" Fill="{Binding Dot}" VerticalAlignment="Center" HorizontalAlignment="Left" />
+                                        <TextBlock Grid.Column="1" Classes="quiet" FontSize="12" Text="{Binding Name}" />
+                                        <TextBlock Grid.Column="2" Classes="quiet" FontSize="12" Text="{Binding Text}" />
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
                 </Grid>
             </Border>
 
-            <!-- Right: Phone + Trips -->
-            <ScrollViewer Grid.Column="2" Padding="16">
-                <StackPanel Spacing="14">
+            <!-- The load sheet: the middle of the screen, because this is where the arguments are won -->
+            <ScrollViewer Grid.Column="1" Padding="22,16">
+                <Panel>
+                    <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="6" Margin="0,120,0,0" MaxWidth="420" IsVisible="{Binding Pic.NoCard, FallbackValue=True}">
+                        <TextBlock Classes="big" Text="{v:Tr 'No flights on the sheet'}" TextAlignment="Center" />
+                        <TextBlock Classes="quiet" TextAlignment="Center" Text="{v:Tr 'When someone calls and you agree on a flight, the weight, balance and fuel build up here as you talk.'}" />
+                    </StackPanel>
 
-                    <!-- Proximity payload prompt -->
-                    <Border Classes="card" IsVisible="{Binding HasPayloadPrompt}"
-                            Background="#FF13233A" BorderBrush="{StaticResource Accent}">
-                        <StackPanel Spacing="10">
-                            <TextBlock Text="{Binding PayloadPromptTitle}" FontSize="15" FontWeight="Bold"
-                                       Foreground="{StaticResource Accent}" />
-                            <TextBlock Text="{Binding PayloadPromptDetail}" Classes="muted" TextWrapping="Wrap" />
-                            <TextBlock Text="You're stopped at the pickup — load them aboard?" Classes="muted"
-                                       FontSize="11" TextWrapping="Wrap" />
-                            <Grid ColumnDefinitions="*,Auto" >
-                                <Button Grid.Column="0" Content="⬆  Load into aircraft" Classes="accent"
-                                        Command="{Binding LoadPayloadCommand}" HorizontalAlignment="Stretch" />
-                                <Button Grid.Column="1" Content="Later" Classes="ghost"
-                                        Command="{Binding DismissPayloadCommand}" Margin="8,0,0,0" />
-                            </Grid>
-                        </StackPanel>
-                    </Border>
+                    <StackPanel Spacing="14" IsVisible="{Binding Pic.Card, Converter={x:Static ObjectConverters.IsNotNull}, FallbackValue=False}">
+                        <Grid ColumnDefinitions="*,Auto">
+                            <StackPanel Spacing="2">
+                                <TextBlock Classes="title" Text="{Binding Pic.Card.Title}" />
+                                <TextBlock Classes="big" Text="{Binding Pic.Card.Route}" FontWeight="Normal" />
+                                <TextBlock Classes="quiet" Text="{Binding Pic.Card.DistanceLine}" />
+                            </StackPanel>
+                            <StackPanel Grid.Column="1" HorizontalAlignment="Right" Spacing="2">
+                                <TextBlock Classes="big" TextAlignment="Right" Text="{Binding Pic.Card.When}" />
+                                <TextBlock TextAlignment="Right" Text="{Binding Pic.Card.Price}" />
+                                <TextBlock Classes="quiet" TextAlignment="Right" Text="{Binding Pic.Card.Phase}" />
+                            </StackPanel>
+                        </Grid>
 
-                    <!-- Payload status toast -->
-                    <Border Classes="card" IsVisible="{Binding HasPayloadStatus}"
-                            Background="#FF10241A" BorderBrush="{StaticResource SuccessGreen}" Padding="12">
-                        <TextBlock Text="{Binding PayloadStatus}" Foreground="#FFB6F0C9" TextWrapping="Wrap" FontSize="12" />
-                    </Border>
-
-                    <!-- Phone -->
-                    <Border Classes="card">
-                        <StackPanel Spacing="12">
-                            <TextBlock Classes="overline" Text="PHONE" />
-
-                            <!-- Incoming -->
-                            <Border CornerRadius="10" Padding="14" IsVisible="{Binding IsCallIncoming}"
-                                    Background="#FF2A2410" BorderBrush="{StaticResource WarningOrange}" BorderThickness="1">
-                                <StackPanel Spacing="10">
-                                    <TextBlock Text="📞  Incoming call" FontSize="14" FontWeight="Bold"
-                                               Foreground="{StaticResource WarningOrange}" HorizontalAlignment="Center" />
-                                    <TextBlock Text="{Binding CurrentCall.CallerName}" FontSize="16" FontWeight="SemiBold"
-                                               Foreground="{StaticResource TextPrimary}" HorizontalAlignment="Center" />
-                                    <Grid ColumnDefinitions="*,*" >
-                                        <Button Grid.Column="0" Content="Answer" Classes="success" Margin="0,0,4,0"
-                                                Command="{Binding AnswerCallCommand}" CommandParameter="{Binding CurrentCall}"
-                                                HorizontalAlignment="Stretch" />
-                                        <Button Grid.Column="1" Content="Reject" Classes="danger" Margin="4,0,0,0"
-                                                Command="{Binding RejectCallCommand}" CommandParameter="{Binding CurrentCall}"
-                                                HorizontalAlignment="Stretch" />
-                                    </Grid>
+                        <Grid ColumnDefinitions="*,20,300">
+                            <v:EnvelopeChart Data="{Binding Pic.Card.Envelope}" Height="330" />
+                            <StackPanel Grid.Column="2" Spacing="12">
+                                <StackPanel Spacing="1">
+                                    <TextBlock Classes="big" Text="{Binding Pic.Card.Room}" Foreground="{Binding Pic.Card.RoomBrush}" />
+                                    <TextBlock Classes="quiet" Text="{Binding Pic.Card.TakeoffWeight}" />
                                 </StackPanel>
-                            </Border>
-
-                            <!-- Active call -->
-                            <Border CornerRadius="10" Padding="14" IsVisible="{Binding HasActiveCall}"
-                                    Background="#FF10241A" BorderBrush="{StaticResource SuccessGreen}" BorderThickness="1">
-                                <StackPanel Spacing="10">
-                                    <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center">
-                                        <Ellipse Width="10" Height="10" Fill="{StaticResource SuccessGreen}" VerticalAlignment="Center" />
-                                        <TextBlock Text="In call" FontSize="13" FontWeight="Bold"
-                                                   Foreground="{StaticResource SuccessGreen}" VerticalAlignment="Center" />
-                                    </StackPanel>
-                                    <TextBlock Text="{Binding CurrentCall.CallerName}" FontSize="16" FontWeight="SemiBold"
-                                               Foreground="{StaticResource TextPrimary}" HorizontalAlignment="Center" />
-
-                                    <!-- Mic meter -->
-                                    <StackPanel Spacing="5">
-                                        <TextBlock Text="🎙  Listening…" FontSize="11" Foreground="{StaticResource TextMuted}" HorizontalAlignment="Center" />
-                                        <ProgressBar Value="{Binding AudioLevelPercent}" Maximum="100" Height="6"
-                                                     CornerRadius="3" Background="{StaticResource SurfaceInput}"
-                                                     Foreground="{StaticResource Accent}" />
-                                    </StackPanel>
-
-                                    <!-- Conversation -->
-                                    <Border Background="{StaticResource SurfaceInput}" CornerRadius="8" Padding="10" MaxHeight="240">
-                                        <ScrollViewer Name="ConversationScrollViewer" VerticalScrollBarVisibility="Auto">
-                                            <ItemsControl ItemsSource="{Binding ConversationHistory}">
-                                                <ItemsControl.ItemTemplate>
-                                                    <DataTemplate>
-                                                        <StackPanel Spacing="2" Margin="0,4">
-                                                            <TextBlock Text="{Binding Speaker}" FontSize="10" FontWeight="Bold"
-                                                                       Foreground="{Binding SpeakerColor}" />
-                                                            <TextBlock Text="{Binding Message}" FontSize="12"
-                                                                       Foreground="{StaticResource TextPrimary}" TextWrapping="Wrap" />
-                                                        </StackPanel>
-                                                    </DataTemplate>
-                                                </ItemsControl.ItemTemplate>
-                                            </ItemsControl>
-                                        </ScrollViewer>
-                                    </Border>
-
-                                    <!-- Live transcription -->
-                                    <Border Background="#FF102030" CornerRadius="8" Padding="10"
-                                            BorderBrush="{StaticResource AccentDim}" BorderThickness="1"
-                                            IsVisible="{Binding LiveTranscript, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
-                                        <StackPanel Spacing="3">
-                                            <TextBlock Text="🎤 YOU (LIVE)" FontSize="10" FontWeight="Bold" Foreground="{StaticResource Accent}" />
-                                            <TextBlock Text="{Binding LiveTranscript}" FontSize="13"
-                                                       Foreground="#FFB8E8F5" TextWrapping="Wrap" FontStyle="Italic" />
-                                        </StackPanel>
-                                    </Border>
-
-                                    <Button Content="End call" Classes="danger" HorizontalAlignment="Stretch"
-                                            Command="{Binding EndCallCommand}" />
-                                </StackPanel>
-                            </Border>
-
-                            <!-- Recent calls -->
-                            <StackPanel Spacing="8">
-                                <TextBlock Text="Recent" Classes="muted" FontWeight="SemiBold" />
-                                <ItemsControl ItemsSource="{Binding CallHistory}">
+                                <ItemsControl ItemsSource="{Binding Pic.Card.Seats}">
                                     <ItemsControl.ItemTemplate>
-                                        <DataTemplate>
-                                            <Border Background="{StaticResource SurfaceAlt}" CornerRadius="8" Padding="10" Margin="0,3">
-                                                <Grid ColumnDefinitions="*,Auto">
-                                                    <TextBlock Grid.Column="0" Text="{Binding CallerName}" Foreground="{StaticResource TextPrimary}"
-                                                               FontWeight="SemiBold" FontSize="12" VerticalAlignment="Center" />
-                                                    <TextBlock Grid.Column="1" Text="{Binding StartTime, StringFormat='{}{0:HH:mm}'}"
-                                                               Foreground="{StaticResource TextMuted}" FontSize="11" VerticalAlignment="Center" />
+                                        <DataTemplate x:DataType="vm:SeatRow">
+                                            <Grid ColumnDefinitions="90,*,Auto" Margin="0,3">
+                                                <TextBlock Classes="quiet" FontSize="12" Text="{Binding Label}" VerticalAlignment="Center" />
+                                                <TextBlock Grid.Column="1" Text="{Binding Who}" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap" />
+                                                <TextBlock Grid.Column="2" Text="{Binding Kg}" />
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                                <StackPanel Spacing="4">
+                                    <TextBlock Classes="quiet" Text="{Binding Pic.Card.FuelLine}" />
+                                    <v:MarkBar Height="8" Value="{Binding Pic.Card.FuelFraction}" Mark="{Binding Pic.Card.FuelRequiredFraction}" Bar="{StaticResource Okay}" />
+                                </StackPanel>
+                            </StackPanel>
+                        </Grid>
+
+                        <ItemsControl ItemsSource="{Binding Pic.Card.Findings}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="vm:FindingRow">
+                                    <TextBlock Classes="big" Margin="0,1" Text="{Binding Text}" Foreground="{Binding Brush}" />
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <Button Classes="go" Content="{Binding Pic.Card.BoardLabel}" Command="{Binding Board}" IsVisible="{Binding Pic.Card.CanBoard, FallbackValue=False}" />
+                            <Button Content="{v:Tr 'Weigh the bags'}" Command="{Binding Weigh}" IsVisible="{Binding Pic.Card.CanWeigh, FallbackValue=False}" />
+                            <Button Content="{v:Tr 'Leave 10 kg behind'}" Command="{Binding LeaveTen}" IsVisible="{Binding Pic.Card.CanBoard, FallbackValue=False}" />
+                            <Button Content="{v:Tr 'Talk to them'}" Command="{Binding Meet}" IsVisible="{Binding Pic.Card.CanMeet, FallbackValue=False}" />
+                            <Button Classes="go" Content="{v:Tr 'Settle up and say goodbye'}" Command="{Binding Deplane}" IsVisible="{Binding Pic.Card.CanDeplane, FallbackValue=False}" />
+                            <Button Content="{v:Tr 'Call them'}" Command="{Binding CallCustomer}" CommandParameter="{Binding Pic.Card.Id}" IsVisible="{Binding Pic.Card.CanCall, FallbackValue=False}" />
+                        </StackPanel>
+
+                        <StackPanel Spacing="3" IsVisible="{Binding Pic.Card.HasReview, FallbackValue=False}">
+                            <TextBlock Classes="big" Text="{Binding Pic.Card.ReviewLine}" />
+                            <TextBlock Classes="quiet" Text="{Binding Pic.Card.ReviewPoints}" />
+                            <TextBlock FontStyle="Italic" Text="{Binding Pic.Card.ReviewQuote}" />
+                        </StackPanel>
+
+                        <Grid ColumnDefinitions="*,20,*">
+                            <StackPanel Spacing="3">
+                                <TextBlock Classes="head" Text="{v:Tr 'Weather'}" />
+                                <TextBlock Text="{Binding Pic.Card.Weather}" />
+                                <TextBlock Classes="quiet" Text="{Binding Pic.Card.StripLine}" />
+                            </StackPanel>
+                            <StackPanel Grid.Column="2" Spacing="3">
+                                <TextBlock Classes="head" Text="{v:Tr 'Just changed'}" IsVisible="{Binding Pic.Card.HasChanges, FallbackValue=False}" />
+                                <ItemsControl ItemsSource="{Binding Pic.Card.Changes}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="vm:ChangeRow">
+                                            <TextBlock Foreground="{StaticResource Signal}" Text="{Binding Text}" />
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                                <TextBlock Classes="quiet" Text="{Binding Pic.Card.Notes}" />
+                            </StackPanel>
+                        </Grid>
+                    </StackPanel>
+                </Panel>
+            </ScrollViewer>
+
+            <!-- Where and when -->
+            <Border Grid.Column="2" Background="{StaticResource Panel}" BorderBrush="{StaticResource Line}" BorderThickness="1,0,0,0">
+                <Grid RowDefinitions="300,*">
+                    <v:TileMap Data="{Binding Pic.Map}" ClipToBounds="True" />
+                    <ScrollViewer Grid.Row="1" Padding="18,14">
+                        <StackPanel Spacing="16">
+                            <StackPanel Spacing="2">
+                                <TextBlock Classes="head" Text="{v:Tr 'Booked flights'}" />
+                                <TextBlock Classes="quiet" Text="{v:Tr 'Nothing booked. Stay near the phone.'}" IsVisible="{Binding Pic.NoJobs, FallbackValue=False}" />
+                                <ItemsControl ItemsSource="{Binding Pic.Jobs}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="vm:JobRow">
+                                            <Button Classes="row" BorderBrush="{StaticResource Line}"
+                                                    Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).SelectJob}" CommandParameter="{Binding Id}">
+                                                <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto">
+                                                    <TextBlock Text="{Binding Title}" FontWeight="SemiBold" />
+                                                    <TextBlock Grid.Column="1" Classes="quiet" Text="{Binding Status}" Foreground="{Binding StatusBrush}" />
+                                                    <TextBlock Grid.Row="1" Classes="quiet" Text="{Binding Route}" />
+                                                    <TextBlock Grid.Row="1" Grid.Column="1" Classes="quiet" Text="{Binding When}" />
                                                 </Grid>
-                                            </Border>
+                                            </Button>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+
+                            <StackPanel Spacing="4">
+                                <TextBlock Classes="head" Text="{v:Tr 'Fuel'}" />
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                    <Button Content="{v:Tr 'Fuel to half'}" Command="{Binding RefuelHalf}" />
+                                    <Button Content="{v:Tr 'Fuel to full'}" Command="{Binding RefuelFull}" />
+                                </StackPanel>
+                                <TextBlock Classes="quiet" Text="{Binding Pic.FuelCache}" />
+                            </StackPanel>
+
+                            <StackPanel Spacing="4">
+                                <TextBlock Classes="head" Text="{v:Tr 'Messages'}" />
+                                <ItemsControl ItemsSource="{Binding Pic.Inbox}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="vm:SmsRow">
+                                            <StackPanel Margin="0,0,0,8">
+                                                <TextBlock Classes="quiet" FontSize="12">
+                                                    <Run Text="{Binding From}" />
+                                                    <Run Text="{Binding When}" />
+                                                </TextBlock>
+                                                <TextBlock Text="{Binding Text}" />
+                                            </StackPanel>
                                         </DataTemplate>
                                     </ItemsControl.ItemTemplate>
                                 </ItemsControl>
                             </StackPanel>
                         </StackPanel>
-                    </Border>
-
-                    <!-- Flight plans / trip cards -->
-                    <Border Classes="card">
-                        <StackPanel Spacing="12">
-                            <Grid ColumnDefinitions="*,Auto">
-                                <TextBlock Grid.Column="0" Classes="overline" Text="TRIPS" VerticalAlignment="Center" />
-                                <Border Grid.Column="1" Background="{StaticResource SurfaceInput}" CornerRadius="10" Padding="8,3">
-                                    <TextBlock Text="{Binding TripCountLabel}" Classes="muted" FontSize="11" />
-                                </Border>
-                            </Grid>
-
-                            <ItemsControl ItemsSource="{Binding FlightPlans}">
-                                <ItemsControl.ItemTemplate>
-                                    <DataTemplate>
-                                        <Border Background="{StaticResource SurfaceAlt}" CornerRadius="10" Padding="14" Margin="0,4"
-                                                BorderBrush="{StaticResource StrokeSoft}" BorderThickness="1">
-                                            <StackPanel Spacing="10">
-                                                <!-- header row -->
-                                                <Grid ColumnDefinitions="*,Auto">
-                                                    <TextBlock Grid.Column="0" Text="{Binding CustomerName}" Foreground="{StaticResource TextPrimary}"
-                                                               FontWeight="Bold" FontSize="14" VerticalAlignment="Center" />
-                                                    <Border Grid.Column="1" Background="{StaticResource AccentDim}" CornerRadius="6" Padding="8,3">
-                                                        <TextBlock Text="{Binding Status}" Foreground="{StaticResource TextPrimary}" FontSize="10" FontWeight="SemiBold" />
-                                                    </Border>
-                                                </Grid>
-                                                <!-- route -->
-                                                <Grid ColumnDefinitions="*,Auto,*">
-                                                    <StackPanel Grid.Column="0">
-                                                        <TextBlock Text="PICKUP" FontSize="9" Foreground="{StaticResource TextMuted}" FontWeight="Bold" />
-                                                        <TextBlock Text="{Binding Origin}" Foreground="{StaticResource TextPrimary}" FontSize="12" TextWrapping="Wrap" />
-                                                    </StackPanel>
-                                                    <TextBlock Grid.Column="1" Text="→" Foreground="{StaticResource Accent}" FontSize="18"
-                                                               FontWeight="Bold" VerticalAlignment="Center" Margin="8,0" />
-                                                    <StackPanel Grid.Column="2">
-                                                        <TextBlock Text="DROP-OFF" FontSize="9" Foreground="{StaticResource TextMuted}" FontWeight="Bold" />
-                                                        <TextBlock Text="{Binding Destination}" Foreground="{StaticResource TextPrimary}" FontSize="12" TextWrapping="Wrap" />
-                                                    </StackPanel>
-                                                </Grid>
-                                                <!-- chips -->
-                                                <StackPanel Orientation="Horizontal" Spacing="8">
-                                                    <Border Background="{StaticResource SurfaceInput}" CornerRadius="6" Padding="8,4">
-                                                        <TextBlock Text="{Binding PassengerCount, StringFormat='👤 {0} pax'}" Foreground="{StaticResource TextPrimary}" FontSize="11" />
-                                                    </Border>
-                                                    <Border Background="{StaticResource SurfaceInput}" CornerRadius="6" Padding="8,4">
-                                                        <TextBlock Text="{Binding BaggageWeight, StringFormat='🧳 {0:F0} kg'}" Foreground="{StaticResource TextPrimary}" FontSize="11" />
-                                                    </Border>
-                                                    <Border Background="#FF16301F" CornerRadius="6" Padding="8,4">
-                                                        <TextBlock Text="{Binding AgreedPrice, StringFormat='{}{0:F0} kr'}" Foreground="#FF7BE8A5" FontSize="11" FontWeight="SemiBold" />
-                                                    </Border>
-                                                </StackPanel>
-                                            </StackPanel>
-                                        </Border>
-                                    </DataTemplate>
-                                </ItemsControl.ItemTemplate>
-                            </ItemsControl>
-
-                            <TextBlock Text="No trips yet — answer a call to book one."
-                                       Classes="muted" FontSize="11" HorizontalAlignment="Center"
-                                       IsVisible="{Binding HasNoTrips}" Margin="0,8" />
-                        </StackPanel>
-                    </Border>
-
-                </StackPanel>
-            </ScrollViewer>
+                    </ScrollViewer>
+                </Grid>
+            </Border>
         </Grid>
+
+        <!-- People who remember you -->
+        <ScrollViewer Grid.Row="2" IsVisible="{Binding OnPeople}" Padding="32,20">
+            <StackPanel Spacing="12" MaxWidth="820" HorizontalAlignment="Left">
+                <TextBlock Classes="title" Text="{v:Tr 'People who remember you'}" />
+                <ItemsControl ItemsSource="{Binding Pic.People}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="vm:PersonRow">
+                            <Border BorderBrush="{StaticResource Line}" BorderThickness="0,0,0,1" Padding="0,10">
+                                <StackPanel Spacing="2">
+                                    <Grid ColumnDefinitions="*,Auto">
+                                        <TextBlock Classes="big" Text="{Binding Name}" />
+                                        <TextBlock Grid.Column="1" Text="{Binding Standing}" Foreground="{Binding StandingBrush}" />
+                                    </Grid>
+                                    <TextBlock Classes="quiet" Text="{Binding Line}" />
+                                    <TextBlock FontStyle="Italic" Text="{Binding Memory}" />
+                                </StackPanel>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </StackPanel>
+        </ScrollViewer>
+
+        <!-- Logbook -->
+        <ScrollViewer Grid.Row="2" IsVisible="{Binding OnLogbook}" Padding="32,20">
+            <StackPanel Spacing="12" MaxWidth="820" HorizontalAlignment="Left">
+                <TextBlock Classes="title" Text="{v:Tr 'Logbook'}" />
+                <ItemsControl ItemsSource="{Binding Pic.Logbook}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="vm:LogRow">
+                            <Border BorderBrush="{StaticResource Line}" BorderThickness="0,0,0,1" Padding="0,10">
+                                <StackPanel Spacing="2">
+                                    <Grid ColumnDefinitions="*,Auto">
+                                        <TextBlock Classes="big" Text="{Binding Title}" />
+                                        <TextBlock Grid.Column="1" Classes="big" Text="{Binding Stars}" />
+                                    </Grid>
+                                    <TextBlock Classes="quiet">
+                                        <Run Text="{Binding When}" />
+                                        <Run Text="{v:Tr '  '}" />
+                                        <Run Text="{Binding Route}" />
+                                        <Run Text="{v:Tr '  '}" />
+                                        <Run Text="{Binding Money}" />
+                                    </TextBlock>
+                                    <TextBlock Classes="quiet" Text="{Binding Points}" />
+                                    <TextBlock FontStyle="Italic" Text="{Binding Quote}" />
+                                </StackPanel>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </StackPanel>
+        </ScrollViewer>
+
+        <!-- Money -->
+        <ScrollViewer Grid.Row="2" IsVisible="{Binding OnMoney}" Padding="32,20">
+            <StackPanel Spacing="12" MaxWidth="820" HorizontalAlignment="Left">
+                <TextBlock Classes="title" Text="{v:Tr 'Money'}" />
+                <ItemsControl ItemsSource="{Binding Pic.Ledger}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="vm:LedgerRow">
+                            <Grid ColumnDefinitions="110,*,Auto" Margin="0,4">
+                                <TextBlock Classes="quiet" Text="{Binding When}" />
+                                <TextBlock Grid.Column="1" Text="{Binding Text}" />
+                                <TextBlock Grid.Column="2" Text="{Binding Amount}" Foreground="{Binding AmountBrush}" />
+                            </Grid>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </StackPanel>
+        </ScrollViewer>
+
+        <!-- Settings -->
+        <ScrollViewer Grid.Row="2" IsVisible="{Binding OnSettings}" Padding="32,20">
+            <StackPanel Spacing="14" MaxWidth="560" HorizontalAlignment="Left">
+                <TextBlock Classes="title" Text="{v:Tr 'Settings'}" />
+                <StackPanel Spacing="4">
+                    <TextBlock Classes="head" Text="{v:Tr 'Claude API key'}" />
+                    <TextBox PasswordChar="*" Text="{Binding AnthropicKey}" />
+                    <TextBlock Classes="quiet" Text="{v:Tr 'Create it at platform.claude.com, in the organization linked to your plan\'s API credits. It is stored encrypted for your Windows user.'}" />
+                </StackPanel>
+                <StackPanel Spacing="4">
+                    <TextBlock Classes="head" Text="{v:Tr 'ElevenLabs API key'}" />
+                    <TextBox PasswordChar="*" Text="{Binding ElevenLabsKey}" />
+                </StackPanel>
+                <StackPanel Spacing="4">
+                    <TextBlock Classes="head" Text="{v:Tr 'Language'}" />
+                    <ComboBox ItemsSource="{Binding Languages}" SelectedIndex="{Binding LanguageIndex}" MinWidth="240" />
+                    <TextBlock Classes="quiet" Text="{v:Tr 'Restart the app to change the screen language.'}" />
+                </StackPanel>
+                <StackPanel Spacing="4">
+                    <TextBlock Classes="head" Text="{v:Tr 'Model for the people you talk to'}" />
+                    <ComboBox ItemsSource="{Binding SpeakerModels}" SelectedItem="{Binding SpeakerModel}" MinWidth="240" />
+                    <TextBlock Classes="quiet" Text="{v:Tr 'Haiku replies fastest and costs least. Try Opus if people feel flat.'}" />
+                </StackPanel>
+                <Grid ColumnDefinitions="*,16,*">
+                    <StackPanel Spacing="4">
+                        <TextBlock Classes="head" Text="{v:Tr 'Your name'}" />
+                        <TextBox Text="{Binding PilotName}" />
+                    </StackPanel>
+                    <StackPanel Grid.Column="2" Spacing="4">
+                        <TextBlock Classes="head" Text="{v:Tr 'Company name'}" />
+                        <TextBox Text="{Binding CompanyName}" />
+                    </StackPanel>
+                </Grid>
+                <StackPanel Spacing="4">
+                    <TextBlock Classes="head" Text="{v:Tr 'Your weight in kg'}" />
+                    <NumericUpDown Value="{Binding PilotKg}" Minimum="40" Maximum="160" Increment="1" FormatString="0" MaxWidth="140" HorizontalAlignment="Left" />
+                </StackPanel>
+                <CheckBox IsChecked="{Binding UsingSpeakers}" Content="{v:Tr 'I play through speakers, not a headset'}" />
+                <CheckBox IsChecked="{Binding DoNotDisturb}" Content="{v:Tr 'Do not disturb: no new calls'}" />
+                <TextBlock Classes="quiet" Text="{v:Tr 'Scroll Lock mutes your mic from anywhere, so you can talk on Discord or to ATC without the passengers answering.'}" />
+                <Button Classes="go" Content="{v:Tr 'Save settings'}" Command="{Binding SaveSettings}" HorizontalAlignment="Left" />
+            </StackPanel>
+        </ScrollViewer>
+
+        <!-- The line along the bottom: what the aircraft is doing right now -->
+        <Border Grid.Row="3" Background="{StaticResource Panel}" BorderBrush="{StaticResource Line}" BorderThickness="0,1,0,0" Padding="20,7">
+            <Grid ColumnDefinitions="*,Auto">
+                <TextBlock Classes="quiet" Text="{Binding LiveLine}" />
+                <TextBlock Grid.Column="1" Foreground="{StaticResource Signal}" Text="{Binding Toast}" IsVisible="{Binding HasToast}" />
+            </Grid>
+        </Border>
     </Grid>
 </Window>

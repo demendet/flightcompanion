@@ -72,8 +72,9 @@ public static partial class SpeechText
     }
 
     /// <summary>Which language the voice should use. Replaces the old word guessing, which read "their" as Norwegian "hei".</summary>
-    public static string VoiceLanguage(string personLanguage, bool speaksNorwegian, string? pilotLanguage)
+    public static string VoiceLanguage(string personLanguage, bool speaksNorwegian, string? pilotLanguage, string talkLanguage = "mixed")
     {
+        if (talkLanguage is "no" or "en") return talkLanguage;
         if (!speaksNorwegian && personLanguage != "no") return "en";
         if (pilotLanguage is "en" or "no") return pilotLanguage;
         return personLanguage;

@@ -49,6 +49,40 @@ public class SentenceSplitterTests
     }
 
     [Fact]
+    public void Language_setting_overrides_who_they_are()
+    {
+        Assert.Equal("no", SpeechText.VoiceLanguage("en", false, "en", "no"));
+        Assert.Equal("en", SpeechText.VoiceLanguage("no", true, "no", "en"));
+    }
+
+    [Fact]
+    public void Every_person_is_told_to_speak_norwegian_when_that_is_the_setting()
+    {
+        var german = new FlightCompanion.Game.People.Person { Name = "Klaus", Nationality = "German", Language = "en" };
+        string prompt = Prompts.Speaker(german, null, new FlightCompanion.Game.Career.CareerState(), TalkMode.Phone, null, "no");
+        Assert.Contains("Norwegian bokmal, always", prompt);
+        Assert.DoesNotContain("say you do not understand", prompt);
+    }
+
+    [Fact]
+    public void Translations_keep_their_placeholders()
+    {
+        FlightCompanion.Game.L.Norwegian = true;
+        try
+        {
+            foreach (var key in FlightCompanion.Game.L.Keys)
+            {
+                var want = System.Text.RegularExpressions.Regex.Matches(key, @"\{\d").Select(m => m.Value).OrderBy(v => v);
+                var got = System.Text.RegularExpressions.Regex.Matches(FlightCompanion.Game.L.T(key), @"\{\d").Select(m => m.Value).OrderBy(v => v);
+                Assert.Equal(want, got);
+            }
+            foreach (var t in FlightCompanion.Game.Missions.MissionCatalog.Templates)
+                Assert.NotEqual(t.Title, FlightCompanion.Game.L.T(t.Title));
+        }
+        finally { FlightCompanion.Game.L.Norwegian = false; }
+    }
+
+    [Fact]
     public void Cut_off_speech_records_only_what_was_heard()
     {
         Assert.Equal("one two [cut off]", SpeechText.HeardPart("one two three four", 0.5));

@@ -54,12 +54,12 @@ public sealed class CareerState
 
     public string RankName => Reputation switch
     {
-        < 15 => "Nobody has heard of you",
-        < 30 => "That new pilot",
-        < 50 => "Known around Karasjok",
-        < 70 => "The one you call",
-        < 88 => "A legend on the vidda",
-        _ => "They name the strip after you",
+        < 15 => L.T("Nobody has heard of you"),
+        < 30 => L.T("That new pilot"),
+        < 50 => L.T("Known around Karasjok"),
+        < 70 => L.T("The one you call"),
+        < 88 => L.T("A legend on the vidda"),
+        _ => L.T("They name the strip after you"),
     };
 }
 
@@ -149,14 +149,14 @@ public static class ReviewMaker
         if (m.WentOverweight) stars -= 0.2;
         stars = Math.Clamp(stars, 0.5, 5);
 
-        if (late > 15) points.Add($"{late:0} minutes late to the pickup");
-        else if (m.ArrivedAtPickup is not null) points.Add("On time");
-        points.Add(char.ToUpperInvariant(Flight.LandingScale.Words(grade)[0]) + Flight.LandingScale.Words(grade)[1..]);
-        if (s.StallWarnings > 0) points.Add($"Stall horn {s.StallWarnings} times");
-        if (s.ComfortMin < 40) points.Add("Passengers were frightened");
-        else if (comfortAvg > 88) points.Add("A gentle flight");
-        if (m.WentOverweight) points.Add($"Flew {Aviation.Units.LbToKg(m.LoadedOverGrossLb):0} kg over maximum weight");
-        if (!s.LandedAtDestination) points.Add("Did not land where agreed");
+        if (late > 15) points.Add(L.F("{0:0} minutes late to the pickup", late));
+        else if (m.ArrivedAtPickup is not null) points.Add(L.T("On time"));
+        points.Add(L.T(Flight.LandingScale.Words(grade)));
+        if (s.StallWarnings > 0) points.Add(L.F("Stall horn {0} times", s.StallWarnings));
+        if (s.ComfortMin < 40) points.Add(L.T("Passengers were frightened"));
+        else if (comfortAvg > 88) points.Add(L.T("A gentle flight"));
+        if (m.WentOverweight) points.Add(L.F("Flew {0:0} kg over maximum weight", Aviation.Units.LbToKg(m.LoadedOverGrossLb)));
+        if (!s.LandedAtDestination) points.Add(L.T("Did not land where agreed"));
 
         double agreed = m.Plan.PriceNok ?? 0;
         double pay = stars < 1.5 ? agreed * 0.5 : agreed;
@@ -181,9 +181,9 @@ public static class ReviewMaker
     {
         m.Review = r;
         m.Phase = MissionPhase.Complete;
-        c.Book(now, $"{m.Title}: fare", r.PayNok);
-        if (r.TipNok > 0) c.Book(now, $"{m.Title}: tip", r.TipNok);
-        if (r.RepairNok > 0) c.Book(now, $"{m.Title}: mechanic", -r.RepairNok);
+        c.Book(now, L.F("{0}: fare", m.Title), r.PayNok);
+        if (r.TipNok > 0) c.Book(now, L.F("{0}: tip", m.Title), r.TipNok);
+        if (r.RepairNok > 0) c.Book(now, L.F("{0}: mechanic", m.Title), -r.RepairNok);
         c.Reputation = Math.Clamp(c.Reputation + r.ReputationDelta, 0, 100);
         c.FlightsCompleted++;
         c.HoursFlown += m.Score.AirborneHours;

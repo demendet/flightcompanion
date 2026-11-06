@@ -55,11 +55,11 @@ public static class LandingScale
 
     public static string Words(LandingGrade g) => g switch
     {
-        LandingGrade.Butter => "butter smooth",
-        LandingGrade.Good => "a good landing",
-        LandingGrade.Firm => "a firm landing",
-        LandingGrade.Hard => "a hard landing",
-        _ => "a landing that broke something",
+        LandingGrade.Butter => "Butter smooth",
+        LandingGrade.Good => "A good landing",
+        LandingGrade.Firm => "A firm landing",
+        LandingGrade.Hard => "A hard landing",
+        _ => "A landing that broke something",
     };
 }
 

@@ -242,7 +242,7 @@ public static class MissionFactory
         var (from, to) = PickRoute(tpl, career.CurrentLat, career.CurrentLon, rng);
         var m = new Mission
         {
-            TemplateId = tpl.Id, Title = tpl.Title, CreatedAt = now, CallerId = caller.Id,
+            TemplateId = tpl.Id, Title = L.T(tpl.Title), CreatedAt = now, CallerId = caller.Id,
             Urgent = tpl.Urgent, Sightseeing = tpl.Sightseeing,
             Premise = tpl.Premise.Replace("{from}", from.Name).Replace("{to}", to.Name),
             ReferredByName = caller.ReferredBy,
@@ -292,7 +292,7 @@ public static class MissionFactory
         var r = new Mission
         {
             TemplateId = outbound.TemplateId + "_return",
-            Title = outbound.Title + ": going home",
+            Title = L.F("{0}: going home", outbound.Title),
             CreatedAt = now, CallerId = outbound.CallerId, CompanionIds = [.. outbound.CompanionIds],
             Phase = MissionPhase.Booked, FollowUpOf = outbound.Id,
             Premise = "You are at the end of your trip and the pilot is coming to fetch you, as agreed.",
