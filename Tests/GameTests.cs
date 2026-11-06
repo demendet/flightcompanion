@@ -387,6 +387,116 @@ public class CareerTests
     }
 }
 
+public class SightTests
+{
+    private const double Lat = 69.5, Lon = 24.5;
+
+    [Theory]
+    [InlineData(0, 90, "on the right")]
+    [InlineData(0, 270, "on the left")]
+    [InlineData(0, 5, "straight ahead")]
+    [InlineData(0, 180, "behind you")]
+    [InlineData(350, 80, "on the right")]
+    [InlineData(90, 0, "on the left")]
+    [InlineData(180, 90, "on the left")]
+    public void Left_and_right_depend_on_where_the_aircraft_points(double heading, double bearing, string side)
+        => Assert.Equal(side, SightWatcher.SideOf(heading, bearing));
+
+    private static PointOfInterest At(string name, double bearing, double km, double range = 10)
+    {
+        var (la, lo) = Geo.Offset(Lat, Lon, bearing, km * 1000);
+        return new PointOfInterest(name, la, lo, "a lake", range);
+    }
+
+    [Fact]
+    public void A_lake_on_the_left_is_described_on_the_left_and_flying_the_other_way_flips_it()
+    {
+        var lake = At("Vannet", 270, 3);
+        Assert.Contains("on the left", SightWatcher.Visible(Lat, Lon, 0, [lake])[0].Describe());
+        Assert.Contains("on the right", SightWatcher.Visible(Lat, Lon, 180, [lake])[0].Describe());
+    }
+
+    [Fact]
+    public void Things_out_of_range_or_behind_are_not_mentioned()
+    {
+        Assert.Empty(SightWatcher.Visible(Lat, Lon, 0, [At("Far", 0, 30)]));
+        Assert.Empty(SightWatcher.Visible(Lat, Lon, 0, [At("Behind", 180, 5)]));
+    }
+
+    [Fact]
+    public void Each_sight_gets_one_comment_per_flight()
+    {
+        var w = new SightWatcher();
+        var sights = new[] { At("A", 90, 2), At("B", 270, 4) };
+        Assert.Equal("A", w.NextToMention(Lat, Lon, 0, sights)!.Sight.Name);
+        Assert.Equal("B", w.NextToMention(Lat, Lon, 0, sights)!.Sight.Name);
+        Assert.Null(w.NextToMention(Lat, Lon, 0, sights));
+        w.NewFlight();
+        Assert.NotNull(w.NextToMention(Lat, Lon, 0, sights));
+    }
+
+    [Fact]
+    public void Over_karasjok_they_know_about_sametinget()
+    {
+        var seen = SightWatcher.Visible(69.48, 25.50, 180, WorldData.Sights, 6);
+        Assert.Contains(seen, s => s.Sight.Name == "Sametinget");
+    }
+
+    [Fact]
+    public void The_situation_note_carries_the_view_and_the_phase_of_flight()
+    {
+        var t = new Telemetry { Time = DateTimeOffset.Now, OnGround = false, AglFt = 500, VerticalFpm = 700, BankDeg = -25 };
+        string note = Prompts.Situation(DateTimeOffset.Now, null, t, 80, null, [new SeenSight(new PointOfInterest("Iesjavri", 0, 0, "a lake"), 3, "on the left")]);
+        Assert.Contains("climbing away after takeoff", note);
+        Assert.Contains("banking 25 degrees to the left", note);
+        Assert.Contains("Iesjavri on the left", note);
+    }
+}
+
+public class FuelAdviceTests
+{
+    private static Mission Job(string from, string to) => new() { Phase = MissionPhase.Booked, Plan = new MissionPlan { PickupId = from, DropoffId = to } };
+
+    [Fact]
+    public void Lakselv_to_mollisjok_needs_the_trip_and_reserve_and_there_and_back_is_more()
+    {
+        var a = WorldData.ById("ENNA")!;
+        var advice = FuelAdvisor.Advise(AircraftProfile.C172, a.Lat, a.Lon, Job("ENNA", "ENMP"), 0)!;
+        // 35 nm at 115 kt plus 6 minutes is 0.4 h, 3.8 gal, plus taxi 1.4 and 30 minutes of reserve 4.75: about 10 gal.
+        Assert.InRange(advice.OneWayGal, 9, 11);
+        Assert.False(advice.FuelAtDestination);
+        Assert.InRange(advice.RoundTripGal, advice.OneWayGal + 4, advice.OneWayGal + 7);
+        Assert.True(advice.RoundTripFits);
+    }
+
+    [Fact]
+    public void Being_somewhere_else_first_adds_the_leg_to_the_pickup()
+    {
+        var alta = WorldData.ById("ENAT")!;
+        var banak = WorldData.ById("ENNA")!;
+        var here = FuelAdvisor.Advise(AircraftProfile.C172, banak.Lat, banak.Lon, Job("ENNA", "ENMP"), 0)!;
+        var away = FuelAdvisor.Advise(AircraftProfile.C172, alta.Lat, alta.Lon, Job("ENNA", "ENMP"), 0)!;
+        Assert.True(away.OneWayGal > here.OneWayGal + 2);
+    }
+
+    [Fact]
+    public void Fuel_you_cached_at_the_destination_counts_as_a_pump()
+    {
+        var a = WorldData.ById("ENNA")!;
+        Assert.True(FuelAdvisor.Advise(AircraftProfile.C172, a.Lat, a.Lon, Job("ENNA", "ENMP"), 30)!.FuelAtDestination);
+        Assert.True(FuelAdvisor.Advise(AircraftProfile.C172, a.Lat, a.Lon, Job("ENMP", "ENNA"), 0)!.FuelAtDestination);
+    }
+
+    [Fact]
+    public void A_trip_too_long_for_the_tanks_says_so()
+    {
+        var kirkenes = WorldData.ById("ENKR")!;
+        var far = new Mission { Phase = MissionPhase.Booked, Plan = new MissionPlan { PickupId = "ENKR", DropoffId = "ENAT" } };
+        var advice = FuelAdvisor.Advise(AircraftProfile.C172 with { UsableFuelGal = 15 }, kirkenes.Lat, kirkenes.Lon, far, 0)!;
+        Assert.False(advice.OneWayFits);
+    }
+}
+
 public class TemperTests
 {
     [Fact]

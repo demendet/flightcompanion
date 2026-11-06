@@ -25,6 +25,9 @@ public interface IVoiceStream
     Task StreamAsync(string text, string voiceId, string language, string? previousText, Action<byte[], int> onPcm, CancellationToken ct);
 }
 
+/// <summary>One person in a conversation: who they are, what they sound like, and the name they go by in the script.</summary>
+public sealed record CastMember(Person Person, string VoiceId, Dialect Dialect, string Label);
+
 public sealed class Conversation : IDisposable
 {
     private readonly ISpeakerModel _brain;
@@ -32,13 +35,13 @@ public sealed class Conversation : IDisposable
     private readonly ClipCache _clips;
     private readonly VoiceCaster _caster;
     private readonly AudioOut _audio;
-    private readonly Person _person;
+    private readonly IReadOnlyList<CastMember> _cast;
+    private readonly CastMember _lead;
     private readonly VoiceChannel _channel;
     private readonly Func<string> _situation;
     private readonly List<Turn> _history = [];
     private readonly object _lock = new();
     private string _system;
-    private string _voiceId;
     private CancellationTokenSource? _turnCts;
     private Task _turnTask = Task.CompletedTask;
     private string? _pilotLanguage;
@@ -46,7 +49,7 @@ public sealed class Conversation : IDisposable
     private readonly string _talkLanguage;
 
     /// <summary>Text only, for the on-screen conversation. Fires as each sentence starts.</summary>
-    public event Action<string>? PersonSaid;
+    public event Action<string, string>? PersonSaid;
     public event Action<string>? PilotSaid;
     /// <summary>A whole exchange completed: the note taker can update the card now.</summary>
     public event Action? ExchangeDone;
@@ -54,19 +57,21 @@ public sealed class Conversation : IDisposable
     public event Action<Health>? VoiceHealth;
     public event Action<string>? Timing;
 
-    public Person Person => _person;
+    public Person Person => _lead.Person;
+    public IReadOnlyList<CastMember> Cast => _cast;
+    private bool Group => _cast.Count > 1;
     public IReadOnlyList<Turn> History { get { lock (_lock) return _history.ToList(); } }
     public IEnumerable<string> TranscriptLines(string pilotName)
     {
-        lock (_lock) return _history.Where(t => !t.Text.StartsWith('[')).Select(t => (t.FromPilot ? $"{pilotName}: " : $"{_person.Name}: ") + t.Text).ToList();
+        lock (_lock) return _history.Where(t => !t.Text.StartsWith('[')).Select(t => (t.FromPilot ? $"{pilotName}: " : Group ? "" : $"{_lead.Person.Name}: ") + t.Text).ToList();
     }
     public bool IsSpeaking => _channel.IsPlaying;
 
-    public Conversation(ISpeakerModel brain, IVoiceStream voice, ClipCache clips, VoiceCaster caster, AudioOut audio, Person person, string voiceId, VoiceFx fx, string system, Func<string> situation, string talkLanguage)
+    public Conversation(ISpeakerModel brain, IVoiceStream voice, ClipCache clips, VoiceCaster caster, AudioOut audio, IReadOnlyList<CastMember> cast, VoiceFx fx, string system, Func<string> situation, string talkLanguage)
     {
         _talkLanguage = talkLanguage;
         _brain = brain; _voice = voice; _clips = clips; _caster = caster; _audio = audio;
-        _person = person; _voiceId = voiceId; _system = system; _situation = situation;
+        _cast = cast; _lead = cast[0]; _system = system; _situation = situation;
         _channel = audio.CreateVoice(fx);
     }
 
@@ -92,11 +97,16 @@ public sealed class Conversation : IDisposable
     /// <summary>Something just happened in flight. The person reacts, unless the pilot is in the middle of a sentence.</summary>
     public void React(string whatHappened) => StartTurn($"[what just happened: {whatHappened}. {_situation()}]", null);
 
-    public void Say(string line)
+    private string LanguageOf(CastMember m) => SpeechText.VoiceLanguage(m.Person.Language, m.Person.SpeaksNorwegian, _pilotLanguage, _talkLanguage);
+
+    /// <summary>Pre-rendered clip played straight through, from a random person on board: the reaction that beats the network.</summary>
+    public void Say(Func<CastMember, string, string> lineFor)
     {
-        // Pre-rendered clip played straight through: this is the reaction that beats the network.
-        var clip = _clips.TryGet(_voiceId, SpeechText.VoiceLanguage(_person.Language, _person.SpeaksNorwegian, _pilotLanguage, _talkLanguage), line);
-        if (clip is not null && !_channel.IsPlaying) _channel.Push(clip, clip.Length);
+        if (_channel.IsPlaying) return;
+        var who = _cast[Random.Shared.Next(_cast.Count)];
+        string lang = LanguageOf(who);
+        var clip = _clips.TryGet(who.VoiceId, lang, lineFor(who, lang));
+        if (clip is not null) _channel.Push(clip, clip.Length);
     }
 
     private void CancelTurn()
@@ -124,15 +134,15 @@ public sealed class Conversation : IDisposable
         });
     }
 
-    private sealed record Spoken(string Sentence, long EndsAtByte);
+    private sealed record Spoken(CastMember Who, string Sentence, long EndsAtByte);
 
     private async Task RunTurnAsync(CancellationToken ct)
     {
         var sw = Stopwatch.StartNew();
-        var sentences = Channel.CreateUnbounded<string>();
+        var sentences = Channel.CreateUnbounded<(CastMember Who, string Text)>();
         var spoken = new List<Spoken>();
         long firstByte = _channel.QueuedBytes;
-        string lang = SpeechText.VoiceLanguage(_person.Language, _person.SpeaksNorwegian, _pilotLanguage, _talkLanguage);
+        string lang = LanguageOf(_lead);
         bool firstAudio = false, firstText = false;
 
         // The filler goes out only if the real reply is slow, so most turns never use one.
@@ -144,7 +154,7 @@ public sealed class Conversation : IDisposable
                 if (!firstAudio && !_channel.IsPlaying)
                 {
                     var fillers = lang == "no" ? ReactionLines.FillersNo : ReactionLines.FillersEn;
-                    var clip = _clips.TryGet(_voiceId, lang, fillers[Random.Shared.Next(fillers.Length)]);
+                    var clip = _clips.TryGet(_lead.VoiceId, lang, fillers[Random.Shared.Next(fillers.Length)]);
                     if (clip is not null) _channel.Push(clip, clip.Length);
                 }
             }
@@ -153,13 +163,15 @@ public sealed class Conversation : IDisposable
 
         var speakTask = Task.Run(async () =>
         {
-            string? previous = null;
+            var previous = new Dictionary<CastMember, string>();
+            CastMember? speaking = null;
             try
             {
-                await foreach (var s in sentences.Reader.ReadAllAsync(ct))
+                await foreach (var (who, s) in sentences.Reader.ReadAllAsync(ct))
                 {
-                    PersonSaid?.Invoke(s);
-                    await _voice.StreamAsync(s, _voiceId, lang, previous, (b, c) =>
+                    speaking = who;
+                    PersonSaid?.Invoke(who.Person.Name, s);
+                    await _voice.StreamAsync(s, who.VoiceId, LanguageOf(who), previous.GetValueOrDefault(who), (b, c) =>
                     {
                         if (ct.IsCancellationRequested) return;
                         if (!firstAudio)
@@ -170,8 +182,8 @@ public sealed class Conversation : IDisposable
                         }
                         _channel.Push(b, c);
                     }, ct);
-                    lock (spoken) spoken.Add(new Spoken(s, _channel.QueuedBytes));
-                    previous = s;
+                    lock (spoken) spoken.Add(new Spoken(who, s, _channel.QueuedBytes));
+                    previous[who] = s;
                     VoiceHealth?.Invoke(new Health(HealthLevel.Good, Game.L.T("Voices working")));
                 }
             }
@@ -179,7 +191,7 @@ public sealed class Conversation : IDisposable
             catch (VoiceException ex)
             {
                 Log.Error("Talk", "Voice failed", ex);
-                if (ex.VoiceNotAllowed) _caster.Ban(_voiceId);
+                if (ex.VoiceNotAllowed && speaking is not null) _caster.Ban(speaking.VoiceId);
                 VoiceHealth?.Invoke(new Health(HealthLevel.Problem, ex.KeyProblem ? Game.L.T("The ElevenLabs key was refused. Check it in Settings.")
                     : ex.VoiceNotAllowed ? Game.L.T("That voice needs a paid ElevenLabs plan, the next call will use another")
                     : ex.OutOfCredits ? Game.L.T("ElevenLabs credits have run out") : ex.Message));
@@ -194,7 +206,8 @@ public sealed class Conversation : IDisposable
         var whole = new System.Text.StringBuilder();
         try
         {
-            var splitter = new SentenceSplitter();
+            var splitter = new SpeakerSplitter(_cast.Select(m => m.Label).ToList());
+            CastMember ByLabel(string label) => _cast.First(m => m.Label == label);
             await foreach (var delta in _brain.SpeakAsync(_system, History, ct))
             {
                 if (!firstText)
@@ -203,14 +216,14 @@ public sealed class Conversation : IDisposable
                     Log.Info("Talk", $"First words from Claude after {sw.ElapsedMilliseconds} ms");
                 }
                 whole.Append(delta);
-                foreach (var s in splitter.Push(delta))
+                foreach (var (who, s) in splitter.Push(delta))
                 {
                     string clean = SpeechText.Clean(s);
-                    if (clean.Length > 0) await sentences.Writer.WriteAsync(clean, ct);
+                    if (clean.Length > 0) await sentences.Writer.WriteAsync((ByLabel(who), clean), ct);
                 }
             }
-            string? rest = splitter.Flush();
-            if (rest is not null && SpeechText.Clean(rest) is { Length: > 0 } last) await sentences.Writer.WriteAsync(last, ct);
+            foreach (var (who, s) in splitter.Flush())
+                if (SpeechText.Clean(s) is { Length: > 0 } last) await sentences.Writer.WriteAsync((ByLabel(who), last), ct);
             AiHealth?.Invoke(new Health(HealthLevel.Good, Game.L.T("Claude working")));
         }
         catch (OperationCanceledException) { }
@@ -238,32 +251,41 @@ public sealed class Conversation : IDisposable
             // An empty assistant turn would be rejected on the next request, and nothing was said anyway.
             if (heard.Length > 0) _history.Add(new Turn(false, heard));
         }
-        Log.Info("Talk", $"{_person.Name}: {heard}");
+        Log.Info("Talk", Group ? heard.Replace("\n", " / ") : $"{_lead.Person.Name}: {heard}");
         if (!ct.IsCancellationRequested) ExchangeDone?.Invoke();
         else if (heard.Length > 0) ExchangeDone?.Invoke();
     }
 
+    /// <summary>In a group the history keeps the names, so everyone remembers who said what.</summary>
     private string HeardText(List<Spoken> spoken, long firstByte, bool cancelled)
     {
         List<Spoken> list;
         lock (spoken) list = spoken.ToList();
-        if (!cancelled) return string.Join(" ", list.Select(s => s.Sentence));
+        var heardLines = new List<(CastMember Who, string Text)>();
         long heard = _channel.HeardBytes;
-        var parts = new List<string>();
         long start = firstByte;
         foreach (var s in list)
         {
-            if (heard >= s.EndsAtByte) parts.Add(s.Sentence);
+            if (!cancelled || heard >= s.EndsAtByte) heardLines.Add((s.Who, s.Sentence));
             else
             {
                 double fraction = s.EndsAtByte > start ? (double)(heard - start) / (s.EndsAtByte - start) : 0;
                 string part = SpeechText.HeardPart(s.Sentence, fraction);
-                if (part.Length > 0) parts.Add(part);
+                if (part.Length > 0) heardLines.Add((s.Who, part));
                 break;
             }
             start = s.EndsAtByte;
         }
-        return string.Join(" ", parts);
+        if (!Group) return string.Join(" ", heardLines.Select(l => l.Text));
+        var sb = new System.Text.StringBuilder();
+        CastMember? last = null;
+        foreach (var (who, text) in heardLines)
+        {
+            if (who != last) { if (last is not null) sb.Append('\n'); sb.Append(who.Label).Append(": ").Append(text); }
+            else sb.Append(' ').Append(text);
+            last = who;
+        }
+        return sb.ToString();
     }
 
     public void End()

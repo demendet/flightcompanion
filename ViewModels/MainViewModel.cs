@@ -175,8 +175,9 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public ICommand Board => new RelayCommand(_host.Board);
     public ICommand Deplane => new RelayCommand(_host.Deplane);
     public ICommand LeaveTen => new RelayCommand(() => _host.LeaveBehind(10));
-    public ICommand RefuelFull => new RelayCommand(() => _host.Refuel(53));
-    public ICommand RefuelHalf => new RelayCommand(() => _host.Refuel(26.5));
+    public ICommand RefuelOneWay => new RelayCommand(() => { if (Pic?.Fuel is { } f) _host.Refuel(f.OneWayTarget); });
+    public ICommand RefuelRoundTrip => new RelayCommand(() => { if (Pic?.Fuel is { } f) _host.Refuel(f.RoundTripTarget); });
+    public ICommand RefuelFull => new RelayCommand(() => { if (Pic?.Fuel is { } f) _host.Refuel(f.FullTarget); });
     public ICommand CallCustomer => new RelayCommand<string>(_host.CallPerson);
     public ICommand SelectJob => new RelayCommand<string>(id => { _selected = id; Refresh(); });
 

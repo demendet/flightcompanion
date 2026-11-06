@@ -215,6 +215,8 @@ public sealed class VoiceCaster
 
     public async Task RefreshAsync(CancellationToken ct) => _voices = await _api.ListVoicesAsync(ct);
 
+    public string AccentOf(string voiceId) => _voices.FirstOrDefault(v => v.Id == voiceId)?.Accent ?? "";
+
     /// <summary>The plan does not allow this voice: it will not be cast again.</summary>
     public void Ban(string voiceId) => _banned.Add(voiceId);
 

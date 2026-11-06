@@ -31,7 +31,7 @@ public sealed record Place
     public double MeetingLon => MeetLon ?? Lon;
 }
 
-public sealed record PointOfInterest(string Name, double Lat, double Lon, string Note);
+public sealed record PointOfInterest(string Name, double Lat, double Lon, string Note, double RangeKm = 10);
 
 /// <summary>
 /// The map. Coordinates and elevations of the user's strips come from their own scenery projects.
@@ -110,18 +110,33 @@ public static class WorldData
         },
     ];
 
-    public static readonly IReadOnlyList<PointOfInterest> Sights =
+    /// <summary>What people here would point at. Positions in towns are close, not surveyed.</summary>
+    public static readonly IReadOnlyList<PointOfInterest> Landmarks =
     [
-        new("the Anarjohka river", 69.25, 25.20, "Border river with Finland, old gold panning country"),
-        new("the Karasjohka river", 69.40, 25.60, "Salmon river through Karasjok"),
-        new("Iesjavri lake", 69.65, 24.25, "The biggest lake on the Finnmarksvidda, huge and shallow"),
-        new("Karasjok old church", 69.472, 25.511, "Finnmark's oldest church, the only building left standing here in 1944"),
-        new("the Sautso canyon", 69.67, 23.57, "Northern Europe's biggest canyon, the Alta river at the bottom"),
-        new("Stabbursdalen", 70.15, 24.05, "The world's northernmost pine forest"),
-        new("the Porsanger fjord", 70.25, 25.25, "Long fjord, reindeer swim across it every spring"),
-        new("the North Cape", 71.171, 25.784, "307 m cliff, the end of Europe"),
-        new("the Finnmarksvidda", 69.50, 24.60, "Treeless plateau with thousands of lakes and reindeer herds"),
+        new("Sametinget", 69.4735, 25.5060, "The Sami Parliament in Karasjok, a striking wooden building shaped like a lavvo, known to every Sami", 5),
+        new("Sapmi Park", 69.4715, 25.5153, "The Sami culture park in Karasjok", 4),
+        new("Karasjok old church", 69.4722, 25.5111, "Finnmark's oldest church, the only building left standing here in 1944 when everything else was burned", 4),
+        new("Karasjok", 69.4719, 25.5111, "The Sami capital of Norway, a small town on the river, Sametinget is here, coldest place in the country", 14),
+        new("the Karasjohka river", 69.40, 25.60, "Salmon river running through Karasjok", 8),
+        new("the Anarjohka river", 69.25, 25.20, "Border river with Finland, old gold panning country", 10),
+        new("Iesjavri lake", 69.65, 24.25, "The biggest lake on the Finnmarksvidda, huge and shallow", 14),
+        new("the Sautso canyon", 69.67, 23.57, "Northern Europe's biggest canyon, with the Alta river at the bottom", 12),
+        new("the Alta dam", 69.71, 23.70, "The dam behind the Alta controversy, where Sami and environmental protesters stood up to the state around 1980", 8),
+        new("the Northern Lights Cathedral", 69.967, 23.27, "The spiral titanium cathedral in Alta", 5),
+        new("Alta", 69.97, 23.27, "The biggest town in Finnmark, at the head of the fjord", 14),
+        new("Stabbursdalen", 70.15, 24.05, "The world's northernmost pine forest", 10),
+        new("the Porsanger fjord", 70.25, 25.25, "Long fjord, reindeer swim across it every spring", 14),
+        new("the North Cape", 71.171, 25.784, "307 m cliff, the end of Europe", 14),
+        new("Mollisjok lodge", 69.52787, 24.38564, "The big old timber lodge with red sheds around it, right beside a very short gravel and grass strip by the river", 6),
+        new("Ravnastua", 69.52717, 24.95613, "The old mountain inn alone in the middle of the vidda, a very small strip", 6),
+        new("Kautokeino", 69.0100, 23.0400, "Sami town on the plateau, reindeer and silversmiths", 12),
+        new("the Finnmarksvidda", 69.50, 24.60, "Treeless plateau with thousands of lakes and reindeer herds", 25),
     ];
+
+    /// <summary>Kept for flights: every landmark. Airports count too, since they are what you see first when arriving.</summary>
+    public static readonly IReadOnlyList<PointOfInterest> Sights =
+        Landmarks.Concat(Places.Where(p => !Landmarks.Any(l => l.Name.Contains(p.Name, StringComparison.OrdinalIgnoreCase)))
+            .Select(p => new PointOfInterest(p.Name, p.Lat, p.Lon, p.Brief, 12))).ToList();
 
     public static Place? ById(string? id) => Places.FirstOrDefault(p => string.Equals(p.Id, id, StringComparison.OrdinalIgnoreCase));
 

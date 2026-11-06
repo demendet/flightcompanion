@@ -62,6 +62,11 @@ public sealed class GameHost : IDisposable
     public VoiceCaster Caster { get; }
     public ClipCache Clips { get; }
     public WeatherFeed Weather { get; } = new();
+    private readonly MapKnowledge _map = new();
+    private readonly SightWatcher _sights = new();
+    private DateTimeOffset _lastSightComment = DateTimeOffset.MinValue;
+    private DateTimeOffset _lastSightCheck = DateTimeOffset.MinValue;
+    private string? _approachCalledFor;
 
     public Telemetry? Latest { get; private set; }
     public Health SimHealth { get; private set; } = new(HealthLevel.Working, L.T("Waiting for the sim"));
@@ -72,6 +77,7 @@ public sealed class GameHost : IDisposable
     public string? LastTiming { get; private set; }
     public RingInfo? Ringing => _ringing;
     public Person? TalkingTo => _talk?.Person;
+    public IReadOnlyList<string> TalkGroup => _talk?.Cast.Select(c => c.Label).ToList() ?? [];
     public TalkMode TalkMode => _talkMode;
     public Mission? TalkMission => _talkMission;
     public string Partial => _partial;
@@ -138,6 +144,9 @@ public sealed class GameHost : IDisposable
     private void RenameForeignStrangers()
     {
         foreach (var p in Career.People) CastFactory.MakeLocal(p, _rng);
+        // People from calls made before talks were counted.
+        foreach (var m in Career.Missions.Where(x => x.Transcript.Count >= 2))
+            if (Career.PersonById(m.CallerId) is { Talks: 0 } caller) { caller.Talks = 1; caller.LastContact ??= m.CreatedAt; }
         foreach (var m in Career.Missions)
             foreach (var pax in m.Plan.Passengers.Concat(m.Truth.Passengers))
                 if (Career.PersonById(pax.PersonId) is { } who) pax.Name = who.Name;
@@ -260,10 +269,19 @@ public sealed class GameHost : IDisposable
         {
             Mic.HalfDuplexHold = Settings.UsingSpeakers && _talk.IsSpeaking;
             if (_endCallSoon && !_talk.IsSpeaking) HangUp();
-            else if (_talkMode == TalkMode.Intercom && now >= _nextChatter && !_talk.IsSpeaking && (now - _lastPilotWords).TotalSeconds > 25)
+            else if (_talkMode == TalkMode.Intercom && now >= _nextChatter && _chatterLeft > 0 && !_talk.IsSpeaking && (now - _lastPilotWords).TotalSeconds > 25)
             {
+                _chatterLeft--;
                 ScheduleChatter(now);
-                _talk.React("Nothing is happening right now, it is a quiet moment in the flight. If it suits you, say one small thing about the view or ask something, otherwise only one or two words");
+                _talk.React(_talk.Cast.Count > 1
+                    ? "Nothing is happening right now, it is a quiet moment in the flight. Say a small thing to each other or to the pilot about the view, one or two short lines"
+                    : "Nothing is happening right now, it is a quiet moment in the flight. If it suits you, say one small thing about the view or ask something, otherwise only one or two words");
+            }
+            else if (_talkMode == TalkMode.InPerson && _talk.Cast.Count > 1 && now >= _nextChatter && _chatterLeft > 0 && !_talk.IsSpeaking && (now - _lastPilotWords).TotalSeconds > 15)
+            {
+                _chatterLeft--;
+                _nextChatter = now.AddSeconds(25 + _rng.NextDouble() * 25);
+                _talk.React("The pilot is busy and not talking to you right now. You are standing here waiting with your bags. Talk a little among yourselves about the trip, the bags, the cold or the pilot, one or two short lines");
             }
         }
 
@@ -415,8 +433,8 @@ public sealed class GameHost : IDisposable
             Toast?.Invoke(L.T("Add your Claude and ElevenLabs keys in Settings first"));
             return;
         }
-        string? voice = Caster.VoiceFor(who, Career.People.Where(p => p != who));
-        if (voice is null)
+        var cast = BuildCast(who, m, mode);
+        if (cast.Count == 0)
         {
             VoiceHealth = new Health(HealthLevel.Problem, L.T("No voices available from ElevenLabs"));
             LoadVoices();
@@ -431,9 +449,8 @@ public sealed class GameHost : IDisposable
         _chat.Clear();
         _partial = "";
         var fx = !Settings.RadioEffect ? VoiceFx.Clear : mode switch { TalkMode.Phone => VoiceFx.Phone, TalkMode.Intercom => VoiceFx.Intercom, _ => VoiceFx.Clear };
-        var talk = new Conversation(Brain, Voice, Clips, Caster, Audio, who, voice, fx,
-            Prompts.Speaker(who, m, Career, mode, reason, Settings.TalkLanguage), () => SituationNow(m), Settings.TalkLanguage);
-        talk.PersonSaid += s => Post(() => AddChat(who.Name, s, false));
+        var talk = new Conversation(Brain, Voice, Clips, Caster, Audio, cast, fx, SystemFor(cast, m, mode, reason), () => SituationNow(m), Settings.TalkLanguage);
+        talk.PersonSaid += (name, s) => Post(() => AddChat(name, s, false));
         talk.PilotSaid += s => Post(() => { _partial = ""; AddChat(Career.PilotName, s, true); });
         talk.ExchangeDone += () => Post(() => OnExchangeDone(talk));
         talk.AiHealth += h => Post(() => { AiHealth = h; Changed?.Invoke(); });
@@ -441,24 +458,76 @@ public sealed class GameHost : IDisposable
         talk.Timing += t => Post(() => { LastTiming = t; Changed?.Invoke(); });
         _talk = talk;
         Mic.Start();
-        PreloadClips(who, voice);
+        PreloadClips(cast);
+        _chatterLeft = 8;
+        if (mode == TalkMode.InPerson && cast.Count > 1) _nextChatter = DateTimeOffset.Now.AddSeconds(20 + _rng.NextDouble() * 15);
         talk.Open(openingNote);
         Changed?.Invoke();
     }
 
-    private void PreloadClips(Person who, string voice)
+    private int _chatterLeft;
+
+    /// <summary>
+    /// Everyone taking part. A phone call is one person. At the strip and in the air it is everyone who came, each with their own
+    /// voice, including a friend who turned up unannounced, who becomes a real person the moment they are standing there.
+    /// </summary>
+    private List<CastMember> BuildCast(Person lead, Mission? m, TalkMode mode)
     {
-        string lang = SpeechText.VoiceLanguage(who.Language, who.SpeaksNorwegian, null, Settings.TalkLanguage);
+        var people = new List<Person> { lead };
+        if (m is not null && mode != TalkMode.Phone)
+        {
+            var aboard = m.Plan.BaggageWeighed ? m.Plan.Passengers : m.Truth.Passengers;
+            foreach (var pax in aboard)
+            {
+                if (pax.PersonId is null)
+                {
+                    var friend = CastFactory.Companion(_rng, lead);
+                    friend.WeightKg = pax.Kg;
+                    Career.People.Add(friend);
+                    pax.PersonId = friend.Id;
+                    pax.Name = friend.Name;
+                }
+                if (Career.PersonById(pax.PersonId) is { } p && !people.Contains(p)) people.Add(p);
+            }
+        }
+        var cast = new List<CastMember>();
+        foreach (var p in people)
+        {
+            // Others in this same group count as taken first of all, so two people in one aircraft do not share a voice.
+            string? voice = Caster.VoiceFor(p, cast.Select(c => c.Person).Concat(Career.People.Where(x => x != p && !people.Contains(x))));
+            if (voice is null) continue;
+            string first = p.Name.Split(' ')[0];
+            string label = people.Count(x => x.Name.Split(' ')[0] == first) > 1 ? p.Name : first;
+            cast.Add(new CastMember(p, voice, Dialects.FromAccent(Caster.AccentOf(voice)), label));
+        }
+        return cast;
+    }
+
+    private string SystemFor(IReadOnlyList<CastMember> cast, Mission? m, TalkMode mode, string? reason)
+    {
+        var lead = cast[0];
+        return Prompts.Speaker(lead.Person, m, Career, mode, reason, Settings.TalkLanguage, lead.Dialect,
+            cast.Skip(1).Select(c => (c.Label, c.Person, c.Dialect)).ToList(), lead.Label);
+    }
+
+    private void PreloadClips(IReadOnlyList<CastMember> cast)
+    {
+        var mode = _talkMode;
+        var language = Settings.TalkLanguage;
         var ct = _stop.Token;
         _ = Task.Run(async () =>
         {
             try
             {
-                foreach (var f in lang == "no" ? ReactionLines.FillersNo : ReactionLines.FillersEn)
-                    await Clips.EnsureAsync(voice, lang, f, ct);
-                if (_talkMode != TalkMode.Phone)
-                    foreach (var (_, line) in ReactionLines.All(lang))
-                        await Clips.EnsureAsync(voice, lang, line, ct);
+                foreach (var c in cast)
+                {
+                    string lang = SpeechText.VoiceLanguage(c.Person.Language, c.Person.SpeaksNorwegian, null, language);
+                    foreach (var f in lang == "no" ? ReactionLines.FillersNo : ReactionLines.FillersEn)
+                        await Clips.EnsureAsync(c.VoiceId, lang, f, ct);
+                    if (mode != TalkMode.Phone)
+                        foreach (var (_, line) in ReactionLines.All(lang))
+                            await Clips.EnsureAsync(c.VoiceId, lang, lang == "no" ? Dialects.Adapt(line, c.Dialect) : line, ct);
+                }
             }
             catch (VoiceException ex) { Log.Error("Voice", "Could not prepare clips", ex); }
             catch (OperationCanceledException) { }
@@ -470,8 +539,34 @@ public sealed class GameHost : IDisposable
     {
         var now = DateTimeOffset.Now;
         string? phone = m is not null && _talkMode == TalkMode.Phone ? WeatherFeed.PhoneAppVersion(_forecast.GetValueOrDefault(m.Id)) : null;
-        string? sight = Latest is { OnGround: false } t ? WorldData.NearestSight(t.Lat, t.Lon, 8)?.Name : null;
-        return Prompts.Situation(now, m, Latest, _monitor.Comfort, phone, sight);
+        var visible = Latest is { OnGround: false } t ? SightWatcher.Visible(t.Lat, t.Lon, t.HeadingTrue, AllSights()) : null;
+        return Prompts.Situation(now, m, Latest, _monitor.Comfort, phone, visible);
+    }
+
+    private IEnumerable<PointOfInterest> AllSights() => WorldData.Sights.Concat(_map.Known);
+
+    /// <summary>A few times a minute in the air: is there something new out of the window, and are we coming in to land.</summary>
+    private void WatchTheView(Telemetry t, DateTimeOffset now)
+    {
+        if (_talk is null || _talkMode != TalkMode.Intercom || t.OnGround || (now - _lastSightCheck).TotalSeconds < 5) return;
+        _lastSightCheck = now;
+        _map.RefreshIfMoved(t.Lat, t.Lon, _stop.Token);
+        if (_talk.IsSpeaking || (now - _lastPilotWords).TotalSeconds < 8) return;
+
+        if (_talkMission?.Dropoff is { } to && _approachCalledFor != _talkMission.Id && Geo.DistanceM(t.Lat, t.Lon, to.Lat, to.Lon) < 9000)
+        {
+            _approachCalledFor = _talkMission.Id;
+            _lastSightComment = now;
+            string side = SightWatcher.SideOf(t.HeadingTrue, Geo.BearingDeg(t.Lat, t.Lon, to.Lat, to.Lon));
+            _talk.React($"You are coming in to {to.Name}, you can see it {side}. {to.Brief} The strip is {to.RunwayM:0} metres long. Comment on what you see. If it is a small strip someone nervous can ask if the pilot is really sure about landing there");
+            return;
+        }
+        if ((now - _lastSightComment).TotalSeconds < 75) return;
+        if (_sights.NextToMention(t.Lat, t.Lon, t.HeadingTrue, AllSights()) is { } next)
+        {
+            _lastSightComment = now;
+            _talk.React($"Out of the window: {next.Describe()}. Someone points it out or says something about it if it is worth saying, as a person would, for example what they know about the place");
+        }
     }
 
     private void OnPilotSpoke(string text, string lang)
@@ -548,6 +643,16 @@ public sealed class GameHost : IDisposable
         var m = _talkMission;
         var mode = _talkMode;
         var transcript = _talk.TranscriptLines(Career.PilotName).ToList();
+        var spokenTo = _talk.Cast.Select(c => c.Person).ToList();
+        if (transcript.Count >= 2)
+        {
+            foreach (var p in spokenTo)
+            {
+                p.Talks++;
+                p.LastContact = DateTimeOffset.Now;
+            }
+            RememberTalk(spokenTo[0], m, transcript);
+        }
         CloseTalkObject();
         Mic.Stop();
         Audio.Beep(520, 0.1);
@@ -672,6 +777,8 @@ public sealed class GameHost : IDisposable
         DespawnPeople(m);
         double fear = m.CompanionIds.Concat([m.CallerId]).Select(id => Career.PersonById(id)?.Fear ?? 0).DefaultIfEmpty(0).Max();
         _monitor.BeginCabin(fear);
+        _sights.NewFlight();
+        _approachCalledFor = null;
 
         if (m.Plan.Passengers.Count > 0 && Career.PersonById(m.CallerId) is { } lead)
             OpenTalk(lead, m, TalkMode.Intercom, null, "You have just climbed in, the door is shut and you have put on your headset. Say something short.");
@@ -725,6 +832,26 @@ public sealed class GameHost : IDisposable
         Changed?.Invoke();
     });
 
+    private void RememberTalk(Person who, Mission? m, IReadOnlyList<string> transcript)
+    {
+        if (!Brain.HasKey) return;
+        string facts = Prompts.CallFacts(m, transcript.TakeLast(16));
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                string memory = await Brain.OneLineAsync(Prompts.MemorySystem(who, Settings.TalkLanguage), facts, _stop.Token);
+                Post(() =>
+                {
+                    who.Memories.Add(new MemoryNote(DateTimeOffset.Now, memory));
+                    Save();
+                    Changed?.Invoke();
+                });
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException) { Log.Error("Game", "Could not write the memory of a talk", ex); }
+        });
+    }
+
     private void WriteMemories(Mission m, FlightReview review, Person? lead)
     {
         if (lead is null || !Brain.HasKey) return;
@@ -734,7 +861,7 @@ public sealed class GameHost : IDisposable
         {
             try
             {
-                string memory = await Brain.OneLineAsync(Prompts.MemorySystem(lead), facts, _stop.Token);
+                string memory = await Brain.OneLineAsync(Prompts.MemorySystem(lead, Settings.TalkLanguage), facts, _stop.Token);
                 string quote = await Brain.OneLineAsync(Prompts.QuoteSystem(lead, Settings.TalkLanguage), facts, _stop.Token);
                 Post(() =>
                 {
@@ -817,6 +944,7 @@ public sealed class GameHost : IDisposable
         var flow = _flow.Step(t, flight, now, _monitor.Comfort);
         foreach (var e in flow) OnFlow(e);
         foreach (var e in flight) OnFlightEvent(e, now);
+        WatchTheView(t, now);
         if (flow.Count > 0 || flight.Count > 0) Changed?.Invoke();
         LiveChanged?.Invoke();
     }
@@ -841,7 +969,7 @@ public sealed class GameHost : IDisposable
                 if (_talk is not null && _talkMission == l.Mission && Career.PersonById(l.Mission.CallerId) is { } who)
                 {
                     _talkMode = TalkMode.Debrief;
-                    _talk.ChangeScene(Prompts.Speaker(who, l.Mission, Career, TalkMode.Debrief, null, Settings.TalkLanguage));
+                    _talk.ChangeScene(SystemFor(_talk.Cast, l.Mission, TalkMode.Debrief, null));
                 }
                 break;
             case ReadyToDeplane:
@@ -856,19 +984,35 @@ public sealed class GameHost : IDisposable
         if (_talk is null || _talkMode is not (TalkMode.Intercom or TalkMode.Debrief)) return;
         var who = _talk.Person;
         string lang = SpeechText.VoiceLanguage(who.Language, who.SpeaksNorwegian, Mic.LastLanguage, Settings.TalkLanguage);
+        // Same line for whoever says it, so the choice of words is made once.
         bool talkingNow = (now - _lastPilotWords).TotalSeconds < 3;
 
         var lines = ReactionLines.For(e.Kind, lang);
-        if (lines.Count > 0 && !talkingNow) _talk.Say(lines[_rng.Next(lines.Count)]);
+        if (lines.Count > 0 && !talkingNow)
+        {
+            string line = lines[_rng.Next(lines.Count)];
+            _talk.Say((member, memberLang) => memberLang == "no" ? Dialects.Adapt(line, member.Dialect) : line);
+        }
 
-        bool worthWords = e.Kind is FlightEventKind.Landing or FlightEventKind.Takeoff or FlightEventKind.StallWarning or FlightEventKind.ExtremeBank
-            or FlightEventKind.EngineStoppedInAir or FlightEventKind.LowFuel or FlightEventKind.DiveHard or FlightEventKind.Sightseeing;
+        bool worthWords = e.Kind is FlightEventKind.Landing or FlightEventKind.Takeoff or FlightEventKind.StallWarning or FlightEventKind.ExtremeBank or FlightEventKind.SteepBank
+            or FlightEventKind.EngineStoppedInAir or FlightEventKind.LowFuel or FlightEventKind.DiveHard or FlightEventKind.Turbulence or FlightEventKind.LowPass;
         if (worthWords && !talkingNow && (now - _lastReaction).TotalSeconds > 15)
         {
             _lastReaction = now;
             _talk.React(e.Text);
         }
     }
+
+    /// <summary>How much this job needs, from where the aircraft stands now. Null when there is no job to fuel for.</summary>
+    public FuelAdvice? FuelNeed(Mission? m)
+    {
+        if (m is null) return null;
+        double cached = Career.FuelCache.GetValueOrDefault(m.Plan.DropoffId ?? "");
+        return FuelAdvisor.Advise(CurrentAircraft(), Latest?.Lat, Latest?.Lon, m, cached);
+    }
+
+    /// <summary>The place you are parked at, if any: that is where fuel comes from.</summary>
+    public Place? PlaceHere() => Latest is { OnGround: true } t ? WorldData.Nearest(t.Lat, t.Lon, 2.5) : null;
 
     private void ScheduleChatter(DateTimeOffset now)
     {

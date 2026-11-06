@@ -222,12 +222,15 @@
                                 </ItemsControl>
                             </StackPanel>
 
-                            <StackPanel Spacing="4">
+                            <StackPanel Spacing="5">
                                 <TextBlock Classes="head" Text="{v:Tr 'Fuel'}" />
-                                <StackPanel Orientation="Horizontal" Spacing="6">
-                                    <Button Content="{v:Tr 'Fuel to half'}" Command="{Binding RefuelHalf}" />
-                                    <Button Content="{v:Tr 'Fuel to full'}" Command="{Binding RefuelFull}" />
-                                </StackPanel>
+                                <TextBlock Classes="big" Text="{Binding Pic.Fuel.OnBoard}" />
+                                <TextBlock Text="{Binding Pic.Fuel.Need}" />
+                                <TextBlock Classes="quiet" Text="{Binding Pic.Fuel.Here}" />
+                                <TextBlock Foreground="{StaticResource Signal}" Text="{Binding Pic.Fuel.Warning}" IsVisible="{Binding Pic.Fuel.HasWarning, FallbackValue=False}" />
+                                <Button Classes="go" Content="{Binding Pic.Fuel.OneWayLabel}" Command="{Binding RefuelOneWay}" IsEnabled="{Binding Pic.Fuel.CanFuel, FallbackValue=False}" IsVisible="{Binding Pic.Fuel.HasOneWay, FallbackValue=False}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
+                                <Button Classes="go" Content="{Binding Pic.Fuel.RoundTripLabel}" Command="{Binding RefuelRoundTrip}" IsEnabled="{Binding Pic.Fuel.CanFuel, FallbackValue=False}" IsVisible="{Binding Pic.Fuel.HasRoundTrip, FallbackValue=False}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
+                                <Button Content="{Binding Pic.Fuel.FullLabel}" Command="{Binding RefuelFull}" IsEnabled="{Binding Pic.Fuel.CanFuel, FallbackValue=False}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
                                 <TextBlock Classes="quiet" Text="{Binding Pic.FuelCache}" />
                             </StackPanel>
 
@@ -257,6 +260,7 @@
         <ScrollViewer Grid.Row="2" IsVisible="{Binding OnPeople}" Padding="32,20">
             <StackPanel Spacing="12" MaxWidth="820" HorizontalAlignment="Left">
                 <TextBlock Classes="title" Text="{v:Tr 'People who remember you'}" />
+                <TextBlock Classes="quiet" Text="{v:Tr 'Nobody yet. Everyone you talk to ends up here.'}" IsVisible="{Binding Pic.NoPeople, FallbackValue=False}" />
                 <ItemsControl ItemsSource="{Binding Pic.People}">
                     <ItemsControl.ItemTemplate>
                         <DataTemplate x:DataType="vm:PersonRow">

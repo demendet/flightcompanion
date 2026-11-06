@@ -82,7 +82,6 @@ public sealed class FlightMonitor
     private int _bounces;
     private readonly Queue<(DateTimeOffset t, double g)> _gHistory = new();
     private bool _lowFuelFired;
-    private string? _lastSight;
 
     public double Comfort { get; private set; } = 100;
     public bool Airborne => _airborne;
@@ -161,13 +160,6 @@ public sealed class FlightMonitor
             {
                 _lowFuelFired = true;
                 events.Add(new(FlightEventKind.LowFuel, t.Time, t.FuelGal, $"Only {t.FuelGal:0.0} gallons left"));
-            }
-
-            var sight = World.WorldData.NearestSight(t.Lat, t.Lon, 6);
-            if (sight is not null && sight.Name != _lastSight)
-            {
-                _lastSight = sight.Name;
-                events.Add(new(FlightEventKind.Sightseeing, t.Time, 0, $"Near {sight.Name}: {sight.Note}"));
             }
 
             // Gentle flying slowly calms people down.

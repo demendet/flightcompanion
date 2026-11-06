@@ -91,6 +91,106 @@ public class SentenceSplitterTests
     }
 }
 
+public class SpeakerSplitterTests
+{
+    private static readonly string[] Labels = ["Mathis", "Camilla", "Eirik"];
+
+    private static List<(string, string)> Run(string text, int chunk)
+    {
+        var s = new SpeakerSplitter(Labels);
+        var got = new List<(string, string)>();
+        for (int i = 0; i < text.Length; i += chunk) got.AddRange(s.Push(text.Substring(i, Math.Min(chunk, text.Length - i))));
+        got.AddRange(s.Flush());
+        return got;
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(3)]
+    [InlineData(500)]
+    public void Each_line_goes_to_its_speaker_however_the_text_streams_in(int chunk)
+    {
+        var got = Run("Mathis: Bures. Æ e klar.\nCamilla: Hei! Er det trygt?\nEirik: Eg e ikkje imponert.", chunk);
+        Assert.Equal([("Mathis", "Bures."), ("Mathis", "Æ e klar."), ("Camilla", "Hei!"), ("Camilla", "Er det trygt?"), ("Eirik", "Eg e ikkje imponert.")], got);
+    }
+
+    [Fact]
+    public void A_time_is_not_a_name()
+    {
+        var got = Run("Klokka 14:00 passer bra.", 2);
+        Assert.Equal([("Mathis", "Klokka 14:00 passer bra.")], got);
+    }
+
+    [Fact]
+    public void A_full_name_or_lower_case_still_finds_the_person_and_no_label_means_the_first()
+    {
+        Assert.Equal("Camilla", Run("Camilla Berg: Hei.", 4)[0].Item1);
+        Assert.Equal("Eirik", Run("eirik: Nei.", 4)[0].Item1);
+        Assert.Equal("Mathis", Run("Hei du.", 2)[0].Item1);
+    }
+
+    [Fact]
+    public void An_unknown_label_is_never_read_aloud()
+    {
+        var got = Run("Alle: Hei!", 3);
+        Assert.Equal("Hei!", got[0].Item2);
+    }
+
+    [Fact]
+    public void Group_prompt_lists_everyone_with_their_own_dialect_and_the_format()
+    {
+        var c = new FlightCompanion.Game.Career.CareerState();
+        var lead = new FlightCompanion.Game.People.Person { Name = "Mathis Guttorm", Home = "Sápmi", Language = "no", SpeaksNorwegian = true };
+        var other = new FlightCompanion.Game.People.Person { Name = "Eirik Lie", Language = "no", SpeaksNorwegian = true };
+        string p = Prompts.Speaker(lead, null, c, TalkMode.InPerson, null, "no", Dialect.Northern, [("Eirik", other, Dialect.Bergen)], "Mathis");
+        Assert.Contains("HOW TO WRITE A GROUP", p);
+        Assert.Contains("eg (jeg)", p);
+        Assert.Contains("æ (jeg)", p);
+        Assert.Contains("bures", p);
+    }
+}
+
+public class DialectTests
+{
+    [Theory]
+    [InlineData("northern", Dialect.Northern)]
+    [InlineData("no-northern", Dialect.Northern)]
+    [InlineData("bergen", Dialect.Bergen)]
+    [InlineData("trøndersk", Dialect.Trondersk)]
+    [InlineData("oslo", Dialect.Oslo)]
+    [InlineData("standard", Dialect.Oslo)]
+    [InlineData("american", Dialect.Unknown)]
+    public void The_voice_accent_decides_the_dialect(string accent, Dialect want) => Assert.Equal(want, Dialects.FromAccent(accent));
+
+    [Fact]
+    public void Each_dialect_gets_its_own_words_and_oslo_never_gets_dialect_words()
+    {
+        var c = new FlightCompanion.Game.Career.CareerState();
+        var who = new FlightCompanion.Game.People.Person { Name = "Kari", Home = "Finnmark", Language = "no", SpeaksNorwegian = true };
+        Assert.Contains("æ (jeg)", Prompts.Speaker(who, null, c, TalkMode.Phone, null, "no", Dialect.Northern));
+        Assert.Contains("eg (jeg)", Prompts.Speaker(who, null, c, TalkMode.Phone, null, "no", Dialect.Bergen));
+        Assert.Contains("itj (ikke)", Prompts.Speaker(who, null, c, TalkMode.Phone, null, "no", Dialect.Trondersk));
+        Assert.Contains("Never use dialect forms", Prompts.Speaker(who, null, c, TalkMode.Phone, null, "no", Dialect.Oslo));
+    }
+
+    [Fact]
+    public void A_finnmark_person_with_a_bergen_voice_is_explained_as_having_grown_up_there()
+    {
+        var c = new FlightCompanion.Game.Career.CareerState();
+        var who = new FlightCompanion.Game.People.Person { Name = "Kari", Home = "Finnmark", Language = "no", SpeaksNorwegian = true };
+        Assert.Contains("You grew up in Bergen", Prompts.Speaker(who, null, c, TalkMode.Phone, null, "no", Dialect.Bergen));
+        Assert.DoesNotContain("You grew up in", Prompts.Speaker(who, null, c, TalkMode.Phone, null, "no", Dialect.Northern));
+    }
+
+    [Theory]
+    [InlineData("Hva er den lyden?", Dialect.Northern, "Ka e den lyden?")]
+    [InlineData("Hva er den lyden?", Dialect.Bergen, "Ka e den lyden?")]
+    [InlineData("Hvorfor går vi så fort ned?", Dialect.Northern, "Koffer går vi så fort ned?")]
+    [InlineData("Hva er den lyden?", Dialect.Oslo, "Hva er den lyden?")]
+    [InlineData("Herregud!", Dialect.Northern, "Herregud!")]
+    public void Quick_reactions_follow_the_dialect(string line, Dialect d, string want) => Assert.Equal(want, Dialects.Adapt(line, d));
+}
+
 public class SpeechGateTests
 {
     private static readonly float[] Frame = new float[SpeechGate.FrameSamples];

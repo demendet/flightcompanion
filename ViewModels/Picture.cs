@@ -28,6 +28,24 @@ public sealed record EnvelopeData(AircraftProfile Profile, double TakeoffLb, dou
 public sealed record MapMarker(string Name, double Lat, double Lon, bool Remote, bool LabelLeft);
 public sealed record MapData(IReadOnlyList<MapMarker> Places, Place? From, Place? To, double? PlaneLat, double? PlaneLon, double PlaneHeading);
 
+public sealed record FuelPicture
+{
+    public required string OnBoard { get; init; }
+    public required string Here { get; init; }
+    public required string Need { get; init; }
+    public required string Warning { get; init; }
+    public required bool HasWarning { get; init; }
+    public required bool HasOneWay { get; init; }
+    public required bool HasRoundTrip { get; init; }
+    public required string OneWayLabel { get; init; }
+    public required string RoundTripLabel { get; init; }
+    public required double OneWayTarget { get; init; }
+    public required double RoundTripTarget { get; init; }
+    public required string FullLabel { get; init; }
+    public required double FullTarget { get; init; }
+    public required bool CanFuel { get; init; }
+}
+
 public sealed record CardPicture
 {
     public required string Id { get; init; }
@@ -94,10 +112,12 @@ public sealed record Picture
     public required bool NoJobs { get; init; }
     public required IReadOnlyList<SmsRow> Inbox { get; init; }
     public required IReadOnlyList<PersonRow> People { get; init; }
+    public required bool NoPeople { get; init; }
     public required IReadOnlyList<LogRow> Logbook { get; init; }
     public required IReadOnlyList<LedgerRow> Ledger { get; init; }
     public required MapData Map { get; init; }
     public required string FuelCache { get; init; }
+    public required FuelPicture Fuel { get; init; }
 }
 
 public static class Palette
@@ -149,7 +169,9 @@ public static class PictureBuilder
 
         bool ringing = h.Ringing is not null;
         var talking = h.TalkingTo;
-        string phoneTitle = ringing ? h.Ringing!.Person.Name : talking?.Name ?? L.T("No calls");
+        string phoneTitle = ringing ? h.Ringing!.Person.Name
+            : talking is not null && h.TalkGroup.Count > 1 ? string.Join(", ", h.TalkGroup)
+            : talking?.Name ?? L.T("No calls");
         string phoneSub = ringing
             ? (h.Ringing!.Person.ReferredBy is { } r ? L.F("{0}, knows {1}", h.Ringing.Person.Job, r) : h.Ringing.Person.Job)
             : talking is not null
@@ -196,16 +218,62 @@ public static class PictureBuilder
             Jobs = jobs,
             NoJobs = jobs.Count == 0,
             Inbox = c.Inbox.AsEnumerable().Reverse().Take(15).Select(s => new SmsRow(Clock.ToLocal(s.When).ToString("ddd HH:mm", Culture), s.From, s.Text)).ToList(),
-            People = c.People.Where(p => p.FlightsWithYou > 0 || p.ArcId is not null).OrderByDescending(p => p.LastContact).Take(60).Select(p => new PersonRow(
-                p.Name, L.F("{0}, {1}, flown {2} times", p.Job, p.Nationality, p.FlightsWithYou),
+            People = c.People.Where(p => p.FlightsWithYou > 0 || p.Talks > 0).OrderByDescending(p => p.LastContact).Take(100).Select(p => new PersonRow(
+                p.Name, L.F("{0}, {1}, talked {2} times, flown {3} times", p.Job, p.Home.Length > 0 ? p.Home : p.Nationality, p.Talks, p.FlightsWithYou),
                 L.T(p.Trust switch { > 50 => "Trusts you completely", > 15 => "Likes you", > -15 => "Neutral", > -50 => "Wary of you", _ => "Will not fly with you" }),
                 p.Memories.LastOrDefault()?.Text ?? "", p.Trust > 15 ? Palette.Good : p.Trust < -15 ? Palette.Stop : Palette.Quiet)).ToList(),
+            NoPeople = !c.People.Any(p => p.FlightsWithYou > 0 || p.Talks > 0),
             Logbook = c.Missions.Where(m => m.Review is not null).OrderByDescending(m => m.LandedAt).Take(100).Select(m => new LogRow(
                 m.LandedAt is { } l ? LocalTime(l) : "", m.Title, L.F("{0} to {1}", m.Pickup?.Name, m.Dropoff?.Name), L.F("{0:0.0} of 5", m.Review!.Stars),
                 Nok(m.Review.PayNok + m.Review.TipNok - m.Review.RepairNok), m.Review.Quote ?? "", string.Join(", ", m.Review.Points))).ToList(),
             Ledger = c.Ledger.AsEnumerable().Reverse().Take(100).Select(e => new LedgerRow(Clock.ToLocal(e.When).ToString("d MMM HH:mm", Culture), e.Text, Nok(e.AmountNok), e.AmountNok < 0 ? Palette.Stop : Palette.Good)).ToList(),
             FuelCache = string.Join(", ", c.FuelCache.Where(k => k.Value >= 1).Select(k => L.F("{0:0} gal at {1}", k.Value, WorldData.ById(k.Key)?.Name ?? k.Key))),
+            Fuel = BuildFuel(h, focus, aircraft),
             Map = new MapData(WorldData.Places.Select(p => new MapMarker(p.Name, p.Lat, p.Lon, p.Remote, p.Id == "ENMP")).ToList(), focus?.Pickup, focus?.Dropoff, h.Latest?.Lat, h.Latest?.Lon, h.Latest?.HeadingTrue ?? 0),
+        };
+    }
+
+    private static FuelPicture BuildFuel(GameHost h, Mission? m, AircraftProfile a)
+    {
+        var t = h.Latest;
+        double onBoard = t?.FuelGal ?? 0;
+        var place = h.PlaceHere();
+        var advice = h.FuelNeed(m is { Phase: not (MissionPhase.Complete or MissionPhase.Cancelled or MissionPhase.Declined or MissionPhase.NoShow) } ? m : null);
+        double? price = place?.FuelPriceNokPerGal;
+        double cached = place is null ? 0 : h.Career.FuelCache.GetValueOrDefault(place.Id);
+        bool parked = t is { OnGround: true, EngineRunning: false };
+
+        string Label(string text, double target)
+        {
+            double add = Math.Max(0, target - onBoard);
+            if (add < 0.5) return L.F("{0}: you have enough", text);
+            return price is { } p ? L.F("{0}: +{1:0} gal, {2}", text, add, Nok(add * p)) : L.F("{0}: +{1:0} gal", text, add);
+        }
+
+        string here = t is null ? L.T("Start the sim to see your fuel")
+            : t.OnGround == false ? L.T("In the air")
+            : place is null ? L.T("There is no fuel out here")
+            : price is { } unit ? L.F("{0} sells fuel at {1} per gal", place.Name, Nok(unit))
+            : cached >= 1 ? L.F("{0:0} gal of your own in the shed at {1}", cached, place.Name)
+            : L.F("No fuel at {0}. Fly some in.", place.Name);
+
+        string need = advice is null ? L.T("No flight selected")
+            : !advice.FuelAtDestination ? L.F("This flight needs {0:0} gal. There is no fuel at {1}, so {2:0} gal for there and back.", advice.OneWayGal, m!.Dropoff?.Name, advice.RoundTripGal)
+            : L.F("This flight needs {0:0} gal including reserve.", advice.OneWayGal);
+
+        string warning = advice is null ? "" : !advice.OneWayFits ? L.F("The tanks hold {0:0} gal, so this flight needs a fuel stop.", a.UsableFuelGal)
+            : !advice.FuelAtDestination && !advice.RoundTripFits ? L.F("There and back does not fit in {0:0} gal. Bring fuel out first, or fuel on the way.", a.UsableFuelGal)
+            : t is { OnGround: true } && !parked ? L.T("Shut down the engine to take fuel.") : "";
+
+        return new FuelPicture
+        {
+            OnBoard = L.F("{0:0} gal on board", onBoard), Here = here, Need = need, Warning = warning, HasWarning = warning.Length > 0,
+            HasOneWay = advice is { OneWayFits: true }, HasRoundTrip = advice is { RoundTripFits: true, FuelAtDestination: false },
+            OneWayLabel = advice is null ? "" : Label(L.T("Fuel for this flight"), advice.OneWayGal),
+            RoundTripLabel = advice is null ? "" : Label(L.T("Fuel for there and back"), advice.RoundTripGal),
+            OneWayTarget = advice?.OneWayGal ?? 0, RoundTripTarget = advice?.RoundTripGal ?? 0,
+            FullLabel = Label(L.T("Fill the tanks"), a.UsableFuelGal), FullTarget = a.UsableFuelGal,
+            CanFuel = parked && place is not null && (price is not null || cached >= 1),
         };
     }
 

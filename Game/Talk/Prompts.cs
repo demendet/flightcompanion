@@ -13,7 +13,8 @@ public enum TalkMode { Phone, InPerson, Intercom, Debrief }
 public static class Prompts
 {
     /// <param name="talkLanguage">"no": everyone speaks Norwegian. "en": everyone speaks English. "mixed": as in real life.</param>
-    public static string Speaker(Person who, Mission? m, CareerState c, TalkMode mode, string? reason, string talkLanguage = "mixed")
+    public static string Speaker(Person who, Mission? m, CareerState c, TalkMode mode, string? reason, string talkLanguage = "mixed", Dialect dialect = Dialect.Unknown,
+        IReadOnlyList<(string Label, Person Person, Dialect Dialect)>? others = null, string? leadLabel = null)
     {
         var sb = new System.Text.StringBuilder();
         sb.AppendLine($"""
@@ -35,8 +36,17 @@ public static class Prompts
         {
             sb.AppendLine("LANGUAGE: every word you say is in Norwegian bokmal, always, and never in English, whatever the pilot says.");
             sb.AppendLine("Write numbers, weights, prices and times out as words, so a voice can read them: to hundre kilo, halv tre, fem tusen kroner.");
-            sb.AppendLine(who.Language == "no"
-                ? "It is your own language. Talk exactly the way people from your home talk, as described above, spelled the way they say it."
+            string dialectText = Dialects.Instructions(dialect);
+            if (dialectText.Length > 0)
+            {
+                string region = Dialects.Region(dialect);
+                bool movedAway = who.Home is "Finnmark" or "Sápmi" && dialect != Dialect.Northern || who.Home == "Oslo" && dialect != Dialect.Oslo;
+                if (movedAway) sb.AppendLine($"You grew up in {region}, and that is how you talk, whatever else is said about where you live now.");
+                sb.AppendLine(dialectText);
+                if (who.Home == "Sápmi" && dialect == Dialect.Northern) sb.AppendLine(SamiSpeech);
+            }
+            else sb.AppendLine(who.Language == "no"
+                ? "It is your own language, ordinary spoken bokmål."
                 : $"You are {who.Nationality} but you have learned Norwegian, simple and a bit imperfect, with a word from home slipping in now and then. Where the description above mentions English, apply that manner to your Norwegian. Do not apologise for it.");
         }
         else if (talkLanguage == "en")
@@ -48,10 +58,10 @@ public static class Prompts
         else
             sb.AppendLine("You speak English, not Norwegian. If the pilot speaks Norwegian, say you do not understand it.");
 
-        if (who.FlightsWithYou > 0 || who.Memories.Count > 0)
+        if (who.FlightsWithYou > 0 || who.Talks > 0 || who.Memories.Count > 0)
         {
             sb.AppendLine();
-            sb.AppendLine($"YOUR HISTORY WITH THIS PILOT: you have flown together {who.FlightsWithYou} times. Your feeling about them on a scale from -100 to 100 is {who.Trust:0}.");
+            sb.AppendLine($"YOUR HISTORY WITH THIS PILOT: you have flown together {who.FlightsWithYou} times and talked {who.Talks} times. Your feeling about them on a scale from -100 to 100 is {who.Trust:0}.");
             foreach (var mem in who.Memories.TakeLast(6))
                 sb.AppendLine($"- {Clock.ToLocal(mem.When):d MMM}: {mem.Text}");
             sb.AppendLine("Bring this up naturally if it fits. Real people remember the time you scared them.");
@@ -80,6 +90,28 @@ public static class Prompts
             }
         }
 
+        if (others is { Count: > 0 })
+        {
+            sb.AppendLine();
+            sb.AppendLine($"THE OTHERS WITH YOU: you also play these people, each with their own voice. {leadLabel ?? who.Name} is the one described above.");
+            foreach (var (label, person, d) in others)
+            {
+                sb.AppendLine($"{label}: {person.DescribeForPrompt()}");
+                if (talkLanguage == "no")
+                {
+                    sb.AppendLine(Dialects.Instructions(d));
+                    if (person.Home == "Sápmi" && d == Dialect.Northern) sb.AppendLine(SamiSpeech);
+                }
+            }
+            sb.AppendLine($"""
+                HOW TO WRITE A GROUP
+                Start every spoken line with the person's first name and a colon, on its own line, like "{leadLabel ?? who.Name}: Hei." Always do this, for every line.
+                Usually one person talks. Whoever the pilot asks answers, by name if a name was said. If the pilot asks all of you, each answers briefly.
+                They are real people together: they can butt in, disagree, tease each other, correct each other, or ask each other things. Each keeps their own dialect and manner.
+                At most three short lines in one turn, then stop and let the pilot talk.
+                """);
+        }
+
         sb.AppendLine();
         sb.AppendLine(mode switch
         {
@@ -87,14 +119,18 @@ public static class Prompts
                 ? $"THE SCENE: you are calling the pilot on the phone. Why: {reason} Open with a short natural line, then let the pilot answer."
                 : "THE SCENE: you are calling the pilot on the phone to arrange this. Greet them, say who you are and what you need in one or two sentences, then stop and let them answer. Do not explain everything at once. Agree on people, baggage, the date and time, where to meet, and a price in Norwegian kroner, and accept the kind of number a bush pilot would ask. When it is settled, or the pilot says no, say goodbye and keep it short.",
             TalkMode.InPerson => "THE SCENE: the pilot has landed and walked over to you. You are standing beside the strip in the cold, face to face, with your bags. This is not a phone call any more, so talk as you would to someone in front of you. If you have something to confess, this is the moment.",
-            TalkMode.Intercom => "THE SCENE: you are in the aircraft, in flight, wearing a headset over the engine noise. Keep it short, the way people talk on an intercom. React to what happens. You can see out of the window. If a [what just happened] note appears, react to it naturally in a few words, like a person would.",
+            TalkMode.Intercom => "THE SCENE: you are in the aircraft, in flight, wearing a headset over the engine noise. Keep it short, the way people talk on an intercom. React to what happens. You can see out of the window, and the notes say what is really out there and on which side. Anyone on board can comment on anything at any time: the view, a place they know, the takeoff, a banking turn, whether that little strip is really long enough. If a [what just happened] note appears, react to it naturally in a few words, like a person would.",
             _ => "THE SCENE: you have just landed. You are getting out of the aircraft and saying goodbye to the pilot. Mention how the flight felt to you. Settle anything still open, and if it is natural, agree on when they come back for you.",
         });
         return sb.ToString();
     }
 
+    private const string SamiSpeech = """
+        You are Sami, from the Alta and Karasjok side of Finnmark, so your Norwegian is that plain inner Finnmark kind: calm, few words, dry, with long pauses written as short sentences. Now and then a Sami word slips in the way it does for people there: bures (hello), giitu (thanks), juo (yes, already), vuoi (oh dear). Only one now and then, never a whole sentence.
+        """;
+
     /// <summary>Volatile facts, sent with each turn so the cached part above stays stable.</summary>
-    public static string Situation(DateTimeOffset now, Mission? m, Telemetry? t, double comfort, string? weather, string? sight)
+    public static string Situation(DateTimeOffset now, Mission? m, Telemetry? t, double comfort, string? weather, IReadOnlyList<SeenSight>? visible = null)
     {
         var parts = new List<string> { $"It is {Clock.ToLocal(now):dddd d MMMM HH:mm}." };
         if (m?.Plan is { } p)
@@ -107,10 +143,15 @@ public static class Prompts
         if (weather is not null) parts.Add($"What your weather app says about today: {weather}.");
         if (t is { OnGround: false })
         {
-            parts.Add($"You are flying at {t.AglFt:0} feet above ground, {t.GroundSpeedKt:0} knots.");
+            string phase = t.AglFt < 800 && t.VerticalFpm > 200 ? "climbing away after takeoff"
+                : t.AglFt < 1200 && t.VerticalFpm < -200 ? "coming down low"
+                : t.VerticalFpm > 300 ? "climbing" : t.VerticalFpm < -300 ? "descending" : "cruising";
+            parts.Add($"You are {phase}, {t.AglFt:0} feet above the ground at {t.GroundSpeedKt:0} knots.");
+            if (Math.Abs(t.BankDeg) > 15) parts.Add($"The aircraft is banking {Math.Abs(t.BankDeg):0} degrees to the {(t.BankDeg > 0 ? "right" : "left")}.");
             parts.Add(comfort switch { < 30 => "You are genuinely frightened.", < 60 => "You are uneasy.", > 90 => "You are relaxed and enjoying it.", _ => "" });
         }
-        if (sight is not null) parts.Add($"Below you: {sight}.");
+        if (visible is { Count: > 0 })
+            parts.Add("What you can see from the windows right now: " + string.Join("; ", visible.Select(v => v.Describe())) + ". When you talk about what you can see, use only these and get left and right as stated.");
         return string.Join(" ", parts.Where(x => x.Length > 0));
     }
 
@@ -139,12 +180,18 @@ public static class Prompts
         {string.Join("\n", transcript)}
         """;
 
-    public static string MemorySystem(Person who) => $"""
-        You are writing one private memory for {who.Name} after a flight with a bush pilot. Write one short plain sentence in English, referring to {who.Name} as "you", about what you will remember about this pilot and this flight, for example: "The pilot flew you through the snow shower and you were sick with fear, but landed like a feather." Return only that sentence.
+    public static string MemorySystem(Person who, string talkLanguage = "mixed") => $"""
+        You are writing one private memory for {who.Name} after contact with a bush pilot. Write one short plain sentence in {(talkLanguage == "en" ? "English" : "Norwegian bokmål")}, referring to {who.Name} as "you" ("du"), about what you will remember about this pilot and what happened, for example: "Piloten fløy deg gjennom snøbyga og du var livredd, men landet som en fjær." Return only that sentence.
         """;
 
     public static string QuoteSystem(Person who, string talkLanguage = "mixed") => $"""
         You are {who.DescribeForPrompt()} You just flew with a bush pilot. Write a short honest review line, as you would say it to a friend, in your voice, in {(talkLanguage == "no" || (talkLanguage != "en" && who.Language == "no") ? "Norwegian" : "English")}. One sentence. Return only that sentence.
+        """;
+
+    public static string CallFacts(Mission? m, IEnumerable<string> tail) => $"""
+        This was a phone call or a talk, not a flight yet. {(m is null ? "" : $"It was about: {m.Title}, {m.Pickup?.Name} to {m.Dropoff?.Name}.")}
+        What was said:
+        {string.Join("\n", tail)}
         """;
 
     public static string FlightFacts(Mission m, FlightReview r, IEnumerable<string> tail) => $"""

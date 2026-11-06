@@ -124,7 +124,7 @@ internal static class SelfTest
             var fake = new FakeSpeaker();
             var clips = new ClipCache(new ElevenLabs(keys, settings), settings);
             var who = new Game.People.Person { Name = "Test", Language = "no", SpeaksNorwegian = true };
-            using var talk = new Conversation(fake, new SilentVoice(), clips, new VoiceCaster(new ElevenLabs(keys, settings)), audio, who, "none", VoiceFx.Phone, "sys", () => "situation", "no");
+            using var talk = new Conversation(fake, new SilentVoice(), clips, new VoiceCaster(new ElevenLabs(keys, settings)), audio, [new CastMember(who, "none", Dialect.Northern, "Test")], VoiceFx.Phone, "sys", () => "situation", "no");
             talk.Open("Say hello");
             await Task.Delay(1200, ct);              // first sentence has played, the second is playing
             talk.PilotStartedTalking();
@@ -144,6 +144,64 @@ internal static class SelfTest
         {
             if (string.IsNullOrEmpty(keys.Anthropic)) return "skipped, no Claude key yet";
             return await ScriptedCall(keys, settings, outDir, ct);
+        });
+
+        await Step("Dialects with the real model", async () =>
+        {
+            if (string.IsNullOrEmpty(keys.Anthropic)) return "skipped, no Claude key yet";
+            var brain = new Brain(keys, settings);
+            var career = new Game.Career.CareerState { PilotName = "Matt" };
+            var lines = new List<string>();
+            foreach (var d in new[] { Dialect.Northern, Dialect.Bergen, Dialect.Trondersk, Dialect.Oslo })
+            {
+                var who = new Game.People.Person { Name = "Kari Nilsen", Home = "Finnmark", Language = "no", SpeaksNorwegian = true, Job = "hunter", Personality = "Practical.", Temper = 0.5 };
+                var text = new System.Text.StringBuilder();
+                await foreach (var x in brain.SpeakAsync(Prompts.Speaker(who, null, career, TalkMode.Phone, "You want a flight from Lakselv to Mollisjok tomorrow.", "no", d), [new Turn(true, "[The pilot just picked up.]\nHallo, Matt her. Hvor mange er dere, hvor mye bagasje har dere, og hva tenkte du å betale?")], ct))
+                    text.Append(x);
+                lines.Add($"{d}: {SpeechText.Clean(text.ToString())}");
+            }
+            File.WriteAllLines(Path.Combine(outDir, "dialects.txt"), lines);
+            return string.Join(" || ", lines);
+        });
+
+        await Step("Several people with the real model", async () =>
+        {
+            if (string.IsNullOrEmpty(keys.Anthropic)) return "skipped, no Claude key yet";
+            var brain = new Brain(keys, settings);
+            var career = new Game.Career.CareerState { PilotName = "Matt" };
+            var lead = new Game.People.Person { Name = "Mathis Guttorm", Home = "Sápmi", Language = "no", SpeaksNorwegian = true, Job = "reindeer herder", Personality = "Calm, few words.", Temper = 0.2 };
+            var oslo = new Game.People.Person { Name = "Camilla Berg", Home = "Oslo", Language = "no", SpeaksNorwegian = true, Job = "photographer", Personality = "Talks a lot, a bit scared of small planes.", Temper = 0.2, Fear = 0.8 };
+            var berg = new Game.People.Person { Name = "Eirik Lie", Home = "Bergen", Language = "no", SpeaksNorwegian = true, Job = "engineer", Personality = "Grumpy, thinks this is overpriced.", Temper = 0.9 };
+            var sys = Prompts.Speaker(lead, null, career, TalkMode.InPerson, null, "no", Dialect.Northern, [("Camilla", oslo, Dialect.Oslo), ("Eirik", berg, Dialect.Bergen)], "Mathis");
+            var labels = new[] { "Mathis", "Camilla", "Eirik" };
+            var log = new List<string>();
+            var history = new List<Turn>();
+            foreach (var line in new[] { "[The pilot has just walked over to you. Greet them.]", "Hei. Hvor mye veier bagasjen deres, Eirik?", "Camilla, er du flyredd eller?", "Hvem av dere vil sitte foran?", "[The pilot is busy and not talking to you right now. You are standing waiting with your bags. Talk a little among yourselves, one or two short lines]" })
+            {
+                history.Add(new Turn(true, line));
+                log.Add("MATT> " + line);
+                var split = new SpeakerSplitter(labels);
+                var sb = new System.Text.StringBuilder();
+                var parsed = new List<string>();
+                await foreach (var d in brain.SpeakAsync(sys, history, ct))
+                {
+                    sb.Append(d);
+                    foreach (var (who, s) in split.Push(d)) parsed.Add($"  {who}: {SpeechText.Clean(s)}");
+                }
+                foreach (var (who, s) in split.Flush()) parsed.Add($"  {who}: {SpeechText.Clean(s)}");
+                log.AddRange(parsed);
+                history.Add(new Turn(false, sb.ToString().Trim()));
+            }
+            File.WriteAllLines(Path.Combine(outDir, "group.txt"), log);
+            return "written to group.txt";
+        });
+
+        await Step("Real map around Mollisjok", async () =>
+        {
+            var map = new MapKnowledge();
+            int n = await map.FetchAsync(69.5291, 24.3923, ct);
+            var seen = SightWatcher.Visible(69.60, 24.40, 180, WorldData.Sights.Concat(map.Known), 6);
+            return $"{n} named places. Flying south just north of the lodge: " + string.Join("; ", seen.Select(s => s.Describe()));
         });
 
         await Step("METAR feed", async () =>

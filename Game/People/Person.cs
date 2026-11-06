@@ -1,3 +1,5 @@
+using System.Text.RegularExpressions;
+
 namespace FlightCompanion.Game.People;
 
 public sealed record MemoryNote(DateTimeOffset When, string Text);
@@ -32,6 +34,8 @@ public sealed class Person
     /// <summary>-100 hates you, 100 trusts you with their life.</summary>
     public double Trust { get; set; }
     public int FlightsWithYou { get; set; }
+    /// <summary>Conversations with you, flown or not. Anyone you talked to knows you.</summary>
+    public int Talks { get; set; }
     public string? VoiceId { get; set; }
     public string? ReferredBy { get; set; }
     public string? ArcId { get; set; }
@@ -42,7 +46,7 @@ public sealed class Person
     {
         var sb = new System.Text.StringBuilder();
         sb.Append($"{Name}, {Age}, {(Home.Length > 0 ? "from " + Home : Nationality)}, {Job}. {Personality}");
-        if (!string.IsNullOrEmpty(SpeechStyle)) sb.Append($" How you talk: {SpeechStyle}");
+        if (!string.IsNullOrEmpty(SpeechStyle)) sb.Append($" Your manner: {Regex.Replace(SpeechStyle, @"(Finnmark dialect|Oslo speech, urban East Norwegian|Calm northern Norwegian)[^.]*\.( Say [^.]*\.)?\s*", "")}");
         sb.Append(Temper switch
         {
             > 0.7 => " You have a short fuse: waiting, high prices or being told no make you properly annoyed, you snap, you swear a bit, and you say what you think. You calm down if the pilot is straight with you.",
@@ -72,9 +76,9 @@ public static class CastFactory
         new("Italian", "en", false, ["Marco", "Giorgio", "Luca"], ["Giulia", "Francesca"], ["Rossi", "Conti", "Moretti"], "Warm, expressive English with a strong rhythm, complains about the cold."),
         new("Japanese", "en", false, ["Kenji", "Hiroshi"], ["Yuki", "Aiko"], ["Tanaka", "Sato", "Mori"], "Very polite, short careful sentences, photographs everything."),
         new("Finnish", "en", false, ["Jari", "Pekka", "Mikko"], ["Aino", "Tuula"], ["Korhonen", "Virtanen", "Mäkelä"], "Very few words, long pauses, dry as a bone."),
-        new("Norwegian", "no", true, ["Anders", "Henrik", "Erik", "Magnus", "Kristian", "Thomas", "Jonas", "Lars", "Martin", "Fredrik"], ["Ingrid", "Kristin", "Camilla", "Silje", "Ida", "Nora", "Hanne", "Maria", "Line"], ["Hansen", "Johansen", "Olsen", "Larsen", "Andersen", "Berg", "Haugen", "Bakken", "Lie", "Moe"], "Oslo speech, urban East Norwegian, says liksom and ikke sant. Excited to be this far north, a bit out of place, thinks everything here is exotic.", "Oslo"),
-        new("Norwegian", "no", true, ["Odd", "Terje", "Roger", "Kjell", "Arne", "Svein", "Ronny", "Geir", "Rune", "Stian"], ["Marit", "Hege", "Tone", "Anne-Lise", "Gunn", "Kari", "Bente", "Torill"], ["Mathisen", "Nilsen", "Pedersen", "Isaksen", "Karlsen", "Henriksen", "Mikkelsen", "Hansen", "Johansen", "Jakobsen"], "Finnmark dialect. Say æ instead of jeg, ka instead of hva, kor instead of hvor, kem instead of hvem, and ikke sant. Relaxed, blunt and funny, swears casually the way people do up north.", "Finnmark"),
-        new("Sami", "no", true, ["Aslak", "Nils", "Johan", "Mikkel", "Ánte", "Per", "Isak", "Mathis", "Jon"], ["Ellen", "Inga", "Risten", "Elle", "Berit", "Sara", "Máret"], ["Somby", "Hætta", "Eira", "Sara", "Utsi", "Guttorm", "Bær", "Balto", "Gaup", "Anti", "Turi", "Buljo"], "Calm northern Norwegian. Say æ instead of jeg and ka instead of hva. Knows the land far better than you, few words, sly humour, and a Sami word like bures for hello now and then.", "Sápmi"),
+        new("Norwegian", "no", true, ["Anders", "Henrik", "Erik", "Magnus", "Kristian", "Thomas", "Jonas", "Lars", "Martin", "Fredrik"], ["Ingrid", "Kristin", "Camilla", "Silje", "Ida", "Nora", "Hanne", "Maria", "Line"], ["Hansen", "Johansen", "Olsen", "Larsen", "Andersen", "Berg", "Haugen", "Bakken", "Lie", "Moe"], "City person, excited to be this far north, a bit out of place, thinks everything here is exotic.", "Oslo"),
+        new("Norwegian", "no", true, ["Odd", "Terje", "Roger", "Kjell", "Arne", "Svein", "Ronny", "Geir", "Rune", "Stian"], ["Marit", "Hege", "Tone", "Anne-Lise", "Gunn", "Kari", "Bente", "Torill"], ["Mathisen", "Nilsen", "Pedersen", "Isaksen", "Karlsen", "Henriksen", "Mikkelsen", "Hansen", "Johansen", "Jakobsen"], "Relaxed, blunt and funny, swears casually the way people do up north.", "Finnmark"),
+        new("Sami", "no", true, ["Aslak", "Nils", "Johan", "Mikkel", "Ánte", "Per", "Isak", "Mathis", "Jon"], ["Ellen", "Inga", "Risten", "Elle", "Berit", "Sara", "Máret"], ["Somby", "Hætta", "Eira", "Sara", "Utsi", "Guttorm", "Bær", "Balto", "Gaup", "Anti", "Turi", "Buljo"], "Knows the land far better than you, few words, sly humour, and a Sami word like bures for hello now and then.", "Sápmi"),
     ];
 
     private static readonly (string job, string personality, double fear, double chatty, double honesty, double wealth)[] Types =
@@ -131,6 +135,8 @@ public static class CastFactory
     public static Person Companion(Random rng, Person lead)
     {
         var p = Create(rng, lead.Nationality.Length > 0 ? lead.Nationality : null, null, lead.Home.Length > 0 ? lead.Home : null);
+        for (int i = 0; i < 12 && p.Name.Split(' ')[0] == lead.Name.Split(' ')[0]; i++)
+            p = Create(rng, lead.Nationality.Length > 0 ? lead.Nationality : null, null, lead.Home.Length > 0 ? lead.Home : null);
         var surname = lead.Name.Contains(' ') ? lead.Name[(lead.Name.IndexOf(' ') + 1)..] : "";
         if (rng.NextDouble() < 0.6 && surname.Length > 0)
             p.Name = p.Name.Split(' ')[0] + " " + surname;
