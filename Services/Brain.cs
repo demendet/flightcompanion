@@ -86,7 +86,6 @@ public sealed class Brain(KeyStore keys, AppSettings settings) : ISpeakerModel
             ["baggage_total_kg"] = Nullable("number"),
             ["baggage_note"] = Nullable("string"),
             ["cargo_kg"] = Nullable("number"),
-            ["cargo_note"] = Nullable("string"),
             ["pickup"] = Nullable("string"),
             ["dropoff"] = Nullable("string"),
             ["pickup_time_local"] = Nullable("string"),

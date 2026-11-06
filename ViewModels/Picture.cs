@@ -37,6 +37,7 @@ public sealed record CardPicture
     public required string Price { get; init; }
     public required string Phase { get; init; }
     public required string DistanceLine { get; init; }
+    public required string MeetLine { get; init; }
     public required string Weather { get; init; }
     public required IReadOnlyList<SeatRow> Seats { get; init; }
     public required string TakeoffWeight { get; init; }
@@ -271,6 +272,10 @@ public static class PictureBuilder
         var r = m.Review;
         bool canTalkAtStrip = m.Phase is MissionPhase.AtPickup or MissionPhase.Boarding;
         bool peopleThere = m.Plan.Passengers.Count > 0 || m.Truth.Passengers.Count > 0;
+        string meet = !peopleThere || m.Pickup is null || m.Phase is not (MissionPhase.Negotiating or MissionPhase.Booked or MissionPhase.AtPickup or MissionPhase.Boarding) ? ""
+            : m.Phase is MissionPhase.AtPickup or MissionPhase.Boarding && m.MeetLat is not null ? L.T("They are at your plane. Shut down and talk to them.")
+            : m.Pickup.Kind == PlaceKind.Airport ? L.F("Park anywhere at {0}. They come to your plane.", m.Pickup.Name)
+            : L.F("They are waiting by the strip at {0}.", m.Pickup.Name);
         return new CardPicture
         {
             Id = m.Id, Title = m.Title,
@@ -280,7 +285,7 @@ public static class PictureBuilder
                 : m.Plan.PriceNok is { } price ? L.F("{0} for the whole trip", Nok(price)) : L.F("Around {0} is normal", Nok(h.SuggestedPrice(m))),
             Phase = PhaseWords(m.Phase),
             DistanceLine = nm > 0 ? L.F("{0:0} nm, {1:0} minutes", nm, fuel.TripHours * 60) + (headwind > 5 ? L.F(", {0:0} kt headwind", headwind) : headwind < -5 ? L.F(", {0:0} kt tailwind", -headwind) : "") : L.T("Local flight"),
-            Weather = weather, Seats = seats,
+            MeetLine = meet, Weather = weather, Seats = seats,
             TakeoffWeight = L.F("{0:0} kg of {1:0} kg", Units.LbToKg(load.TakeoffLb), Units.LbToKg(load.MaxGrossLb)),
             Room = room >= 0 ? L.F("{0:0} kg to spare", room) : L.F("{0:0} kg too heavy", -room),
             RoomBrush = room < 0 ? Palette.Stop : room < 25 ? Palette.Caution : Palette.Good,

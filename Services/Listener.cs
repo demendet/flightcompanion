@@ -79,20 +79,9 @@ public sealed class Listener : IDisposable, IMMNotificationClient
         {
             HealthChanged?.Invoke(new Health(HealthLevel.Working, Game.L.T("Loading speech recognition")));
             _vad = new SileroVadRunner();
-            string path = Path.Combine(AppPaths.Models, _settings.WhisperModelFile);
-            if (!File.Exists(path))
-            {
-                // The old app stored the same model here, so this normally finds it straight away.
-                HealthChanged?.Invoke(new Health(HealthLevel.Working, Game.L.T("Downloading the speech model, 1.6 GB, one time only")));
-                using var http = new HttpClient { Timeout = TimeSpan.FromHours(2) };
-                using var resp = await http.GetAsync("https://huggingface.co/ggerganov/whisper.cpp/resolve/main/" + _settings.WhisperModelFile, HttpCompletionOption.ResponseHeadersRead);
-                resp.EnsureSuccessStatusCode();
-                string tmp = path + ".part";
-                await using (var src = await resp.Content.ReadAsStreamAsync())
-                await using (var dst = File.Create(tmp))
-                    await src.CopyToAsync(dst);
-                File.Move(tmp, path, true);
-            }
+            var model = SpeechModels.ById(_settings.SpeechModel);
+            string path = Path.Combine(AppPaths.Models, model.FileName);
+            if (!File.Exists(path)) await DownloadAsync(model, path);
             _factory = WhisperFactory.FromPath(path);
             _whisperReady = true;
             _work.Add(new WorkItem(new float[SpeechGate.SampleRate], false));   // warms it up: the first real sentence took 3.4 s without this
@@ -104,6 +93,41 @@ public sealed class Listener : IDisposable, IMMNotificationClient
             Log.Error("Mic", "Speech recognition failed to load", ex);
             HealthChanged?.Invoke(new Health(HealthLevel.Problem, Game.L.F("Speech recognition failed: {0}", ex.Message)));
         }
+    }
+
+    /// <summary>One time only, and a broken connection continues where it stopped. The window shows how far it has come.</summary>
+    private async Task DownloadAsync(SpeechModelInfo model, string path)
+    {
+        string part = path + ".part";
+        long have = File.Exists(part) ? new FileInfo(part).Length : 0;
+        using var http = new HttpClient { Timeout = Timeout.InfiniteTimeSpan };
+        http.DefaultRequestHeaders.UserAgent.ParseAdd("FlightCompanion/1.0");
+        using var req = new HttpRequestMessage(HttpMethod.Get, model.Url);
+        if (have > 0) req.Headers.Range = new System.Net.Http.Headers.RangeHeaderValue(have, null);
+        using var resp = await http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead);
+        resp.EnsureSuccessStatusCode();
+        bool resuming = resp.StatusCode == System.Net.HttpStatusCode.PartialContent;
+        if (!resuming) have = 0;
+        long total = have + (resp.Content.Headers.ContentLength ?? model.ApproxMb * 1_000_000L);
+        await using (var src = await resp.Content.ReadAsStreamAsync())
+        await using (var dst = new FileStream(part, resuming ? FileMode.Append : FileMode.Create, FileAccess.Write))
+        {
+            var buf = new byte[1 << 20];
+            long done = have;
+            int lastPercent = -1, n;
+            while ((n = await src.ReadAsync(buf)) > 0)
+            {
+                await dst.WriteAsync(buf.AsMemory(0, n));
+                done += n;
+                int percent = (int)(done * 100 / total);
+                if (percent != lastPercent)
+                {
+                    lastPercent = percent;
+                    HealthChanged?.Invoke(new Health(HealthLevel.Working, Game.L.F("Downloading the speech model: {0}% of {1} MB, one time only", percent, model.ApproxMb)));
+                }
+            }
+        }
+        File.Move(part, path, true);
     }
 
     public void Start()

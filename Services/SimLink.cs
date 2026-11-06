@@ -378,11 +378,35 @@ public sealed class SimLink : IDisposable
     /// Static people the sim can place, found in installed packages by reading their sim.cfg titles. Empty is fine: the
     /// mission still works, you just do not see anyone standing there.
     /// </summary>
+    /// <summary>The sim keeps its settings in a different place for Steam and Store installs, and packages can live anywhere.</summary>
+    public static string? FindCommunityFolder()
+    {
+        string roaming = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+        string local = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        string[] configs =
+        [
+            Path.Combine(roaming, "Microsoft Flight Simulator 2024", "UserCfg.opt"),
+            Path.Combine(local, "Packages", "Microsoft.Limitless_8wekyb3d8bbwe", "LocalCache", "UserCfg.opt"),
+        ];
+        foreach (var cfg in configs)
+        {
+            if (!File.Exists(cfg)) continue;
+            foreach (var line in File.ReadLines(cfg))
+            {
+                if (!line.StartsWith("InstalledPackagesPath", StringComparison.OrdinalIgnoreCase)) continue;
+                int a = line.IndexOf('"'), b = line.LastIndexOf('"');
+                if (a >= 0 && b > a && Path.Combine(line[(a + 1)..b], "Community") is var c && Directory.Exists(c)) return c;
+            }
+        }
+        string[] usual = [Path.Combine(roaming, "Microsoft Flight Simulator 2024", "Packages", "Community"), Path.Combine(local, "Packages", "Microsoft.Limitless_8wekyb3d8bbwe", "LocalCache", "Packages", "Community")];
+        return usual.FirstOrDefault(Directory.Exists);
+    }
+
     public static IReadOnlyList<string> FindPeopleTitles()
     {
         var titles = new List<string>();
-        string community = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Microsoft Flight Simulator 2024", "Packages", "Community");
-        if (!Directory.Exists(community)) return titles;
+        string? community = FindCommunityFolder();
+        if (community is null) return titles;
         foreach (var pkg in Directory.EnumerateDirectories(community))
         {
             string name = Path.GetFileName(pkg);

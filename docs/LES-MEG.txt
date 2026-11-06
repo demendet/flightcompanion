@@ -1,0 +1,22 @@
+Flight Companion
+Et karrierespill for Microsoft Flight Simulator 2024: du driver et lite flyselskap i Finnmark, folk ringer deg, og du snakker med dem med din egen stemme.
+
+SLIK KOMMER DU I GANG
+1. Pakk ut hele mappa et sted du vil ha den. Ikke kjør programmet fra inne i zip-fila.
+2. Start FlightCompanion.exe. Windows kan advare fordi programmet ikke er signert: velg "Mer informasjon" og "Kjør likevel".
+3. Første gang lastes talegjenkjenningen ned, omtrent 1,1 GB. Du ser framdriften nede til venstre.
+4. Gå til Innstillinger og lim inn to nøkler (se under), skriv inn navnet ditt, og trykk Lagre.
+5. Trykk "Test mikrofonen" og si noe. Ordene dine skal dukke opp på skjermen. Programmet bruker standard mikrofon i Windows.
+6. Start simulatoren, sett deg i en Cessna 172, og vent på at telefonen ringer. Eller trykk "Se etter oppdrag".
+
+NØKLENE DU TRENGER (du trenger dine egne, de koster lite)
+- Claude: lag konto på platform.claude.com, legg inn kreditter under Settings, Billing (5 dollar holder lenge), og lag en API-nøkkel.
+- ElevenLabs: lag konto på elevenlabs.io og lag en API-nøkkel. Gratiskontoen holder for å prøve.
+Nøklene lagres kryptert på din Windows-bruker. Ikke del dem med noen.
+
+GODT Å VITE
+- Du trenger hodetelefoner, ellers hører figurene seg selv. Bruker du høyttalere, slå det på i Innstillinger.
+- Scroll Lock demper mikrofonen, så du kan snakke på Discord uten at passasjerene svarer.
+- Vekt og drivstoff skrives til flyet. Bare C172 har riktige tall så langt.
+- Stedene (Mollisjok, Ravnastua, Karasjok) finnes på kartet uten egen scenery, men de ser best ut med scenery-pakkene.
+- Sparingen din ligger i %APPDATA%\FlightCompanion. Loggfiler ligger i %LOCALAPPDATA%\FlightCompanion\Logs.

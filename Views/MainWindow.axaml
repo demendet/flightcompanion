@@ -83,6 +83,10 @@
                             <TextBlock Classes="quiet" FontSize="12" VerticalAlignment="Center" Margin="0,0,10,0" Text="{v:Tr 'Their voice'}" />
                             <Slider Grid.Column="1" Minimum="0" Maximum="200" Value="{Binding VoiceVolume}" VerticalAlignment="Center" />
                         </Grid>
+                        <Grid ColumnDefinitions="Auto,*" VerticalAlignment="Center">
+                            <TextBlock Classes="quiet" FontSize="12" VerticalAlignment="Center" Margin="0,0,10,0" Text="{v:Tr 'Their speed'}" />
+                            <Slider Grid.Column="1" Minimum="70" Maximum="120" Value="{Binding VoiceSpeed}" VerticalAlignment="Center" />
+                        </Grid>
                         <ProgressBar Minimum="0" Maximum="1" Value="{Binding MicLevel}" Height="3" MinWidth="0" />
                         <ItemsControl ItemsSource="{Binding Pic.Statuses}">
                             <ItemsControl.ItemTemplate>
@@ -113,6 +117,7 @@
                                 <TextBlock Classes="title" Text="{Binding Pic.Card.Title}" />
                                 <TextBlock Classes="big" Text="{Binding Pic.Card.Route}" FontWeight="Normal" />
                                 <TextBlock Classes="quiet" Text="{Binding Pic.Card.DistanceLine}" />
+                                <TextBlock Foreground="{StaticResource Signal}" Text="{Binding Pic.Card.MeetLine}" />
                             </StackPanel>
                             <StackPanel Grid.Column="1" HorizontalAlignment="Right" Spacing="2">
                                 <TextBlock Classes="big" TextAlignment="Right" Text="{Binding Pic.Card.When}" />
@@ -331,11 +336,18 @@
                 <StackPanel Spacing="4">
                     <TextBlock Classes="head" Text="{v:Tr 'ElevenLabs API key'}" />
                     <TextBox PasswordChar="*" Text="{Binding ElevenLabsKey}" />
+                    <Button Content="{v:Tr 'Get Norwegian voices'}" Command="{Binding AddVoices}" HorizontalAlignment="Left" />
+                    <TextBlock Classes="quiet" Text="{v:Tr 'Adds real Norwegian voices to your ElevenLabs account, northern ones first. Needs a paid plan and uses no credits.'}" />
                 </StackPanel>
                 <StackPanel Spacing="4">
                     <TextBlock Classes="head" Text="{v:Tr 'Language'}" />
                     <ComboBox ItemsSource="{Binding Languages}" SelectedIndex="{Binding LanguageIndex}" MinWidth="240" />
                     <TextBlock Classes="quiet" Text="{v:Tr 'Restart the app to change the screen language.'}" />
+                </StackPanel>
+                <StackPanel Spacing="4">
+                    <TextBlock Classes="head" Text="{v:Tr 'Speech recognition'}" />
+                    <ComboBox ItemsSource="{Binding SpeechModelLabels}" SelectedIndex="{Binding SpeechModelIndex}" MinWidth="320" />
+                    <TextBlock Classes="quiet" Text="{v:Tr 'Restart the app to change the speech model. A new one downloads on first use.'}" />
                 </StackPanel>
                 <StackPanel Spacing="4">
                     <TextBlock Classes="head" Text="{v:Tr 'Model for the people you talk to'}" />

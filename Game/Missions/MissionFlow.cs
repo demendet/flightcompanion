@@ -6,7 +6,7 @@ using FlightCompanion.Game.World;
 namespace FlightCompanion.Game.Missions;
 
 public abstract record FlowEvent;
-public sealed record PeopleShouldAppear(Mission Mission, Place Place) : FlowEvent;
+public sealed record PeopleShouldAppear(Mission Mission, double Lat, double Lon) : FlowEvent;
 public sealed record PeopleShouldDisappear(Mission Mission) : FlowEvent;
 public sealed record ArrivedAtPickup(Mission Mission, double LateMinutes) : FlowEvent;
 public sealed record CanMeetInPerson(Mission Mission) : FlowEvent;
@@ -18,7 +18,7 @@ public sealed record LoadChanged(double[] StationLb) : FlowEvent;
 /// <summary>Drives one active mission from the sim's telemetry. Pure logic: same input, same result, so it can be tested without flying.</summary>
 public sealed class MissionFlow(CareerState state)
 {
-    private const double SpawnKm = 6, ArriveM = 450, MeetM = 60, LeaveM = 800;
+    private const double SpawnKm = 6, ArriveM = 450, AirportArriveM = 2500, MeetM = 60;
     private bool _peopleVisible;
     private string? _peopleFor;
     private bool _meetAnnounced;
@@ -41,17 +41,32 @@ public sealed class MissionFlow(CareerState state)
     {
         if (m.Pickup is not { } p) return;
         double dist = Geo.DistanceM(t.Lat, t.Lon, p.MeetingLat, p.MeetingLon);
+        bool airport = p.Kind == PlaceKind.Airport;
         // People wait at the strip only around their own time. Nobody stands out there for three days.
         bool timeRight = m.Plan.PickupTime is not { } due || (now - due).TotalHours is > -2 and < 3;
-        if (timeRight && dist < SpawnKm * 1000 && _peopleFor != m.Id && m.Plan.Passengers.Count > 0)
+        // A small strip has one place to stand, so they are already there as you come in.
+        if (!airport && timeRight && dist < SpawnKm * 1000 && _peopleFor != m.Id && m.Plan.Passengers.Count > 0)
         {
             _peopleVisible = true;
             _peopleFor = m.Id;
-            events.Add(new PeopleShouldAppear(m, p));
+            events.Add(new PeopleShouldAppear(m, p.MeetingLat, p.MeetingLon));
         }
         double toStrip = Geo.DistanceM(t.Lat, t.Lon, p.Lat, p.Lon);
-        if ((toStrip < ArriveM || dist < ArriveM) && t.OnGround && t.GroundSpeedKt < 25 && timeRight && Active is null)
+        // A big airport has many places to park, so stopping anywhere on it counts, and they walk out to you.
+        bool arrived = airport
+            ? toStrip < AirportArriveM && t.OnGround && t.GroundSpeedKt < 2
+            : (toStrip < ArriveM || dist < ArriveM) && t.OnGround && t.GroundSpeedKt < 25;
+        if (arrived && timeRight && Active is null)
         {
+            if (airport && m.Plan.Passengers.Count > 0)
+            {
+                var beside = Geo.Offset(t.Lat, t.Lon, t.HeadingTrue + 90, 14);
+                m.MeetLat = beside.lat;
+                m.MeetLon = beside.lon;
+                _peopleVisible = true;
+                _peopleFor = m.Id;
+                events.Add(new PeopleShouldAppear(m, beside.lat, beside.lon));
+            }
             m.Phase = MissionPhase.AtPickup;
             m.ArrivedAtPickup = now;
             double late = m.Plan.PickupTime is { } d ? Math.Max(0, (now - d).TotalMinutes) : 0;
@@ -72,7 +87,7 @@ public sealed class MissionFlow(CareerState state)
                 // where the character cannot walk, and the card offers a button.
                 if (m.Pickup is { } p && !_meetAnnounced)
                 {
-                    double d = Geo.DistanceM(t.Lat, t.Lon, p.MeetingLat, p.MeetingLon);
+                    double d = Geo.DistanceM(t.Lat, t.Lon, m.MeetLat ?? p.MeetingLat, m.MeetLon ?? p.MeetingLon);
                     bool walkedOver = t.OnFoot && d < MeetM;
                     bool parked = t.OnGround && !t.EngineRunning && t.GroundSpeedKt < 1;
                     if (walkedOver || parked)
@@ -87,6 +102,9 @@ public sealed class MissionFlow(CareerState state)
                     // Left without loading. They are still standing there.
                     m.Phase = MissionPhase.Booked;
                     m.ArrivedAtPickup = null;
+                    m.MeetLat = m.MeetLon = null;
+                    events.Add(new PeopleShouldDisappear(m));
+                    _peopleFor = null;
                 }
                 break;
             }

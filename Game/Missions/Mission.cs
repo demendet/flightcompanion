@@ -89,6 +89,9 @@ public sealed class Mission
     public string? FollowUpOf { get; set; }
     public string? ReferredByName { get; set; }
 
+    /// <summary>At airports they come to wherever you stopped, so the meeting point is the plane, not a spot on a map.</summary>
+    public double? MeetLat { get; set; }
+    public double? MeetLon { get; set; }
     public DateTimeOffset? ArrivedAtPickup { get; set; }
     public DateTimeOffset? LoadedAt { get; set; }
     public DateTimeOffset? AirborneAt { get; set; }

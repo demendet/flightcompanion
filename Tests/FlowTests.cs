@@ -65,15 +65,39 @@ public class FlowTests
     }
 
     [Fact]
-    public void People_appear_when_you_get_close_and_not_before()
+    public void At_a_small_strip_people_are_there_when_you_get_close_and_not_before()
     {
         var r = new Rig();
-        r.Feed(From.Lat + 1, From.Lon, false, 110, 3000, repeat: 3);
+        r.M.Plan.PickupId = To.Id;
+        r.Feed(To.Lat + 1, To.Lon, false, 110, 3000, repeat: 3);
         Assert.DoesNotContain(r.Events, e => e is PeopleShouldAppear);
-        r.Feed(From.Lat + 0.03, From.Lon, false, 90, 800);
+        r.Feed(To.Lat + 0.03, To.Lon, false, 90, 800);
         Assert.Single(r.Events, e => e is PeopleShouldAppear);
-        r.Feed(From.Lat + 0.02, From.Lon, false, 90, 600);
+        r.Feed(To.Lat + 0.02, To.Lon, false, 90, 600);
         Assert.Single(r.Events, e => e is PeopleShouldAppear);
+    }
+
+    [Fact]
+    public void At_an_airport_they_come_to_wherever_you_stop()
+    {
+        var r = new Rig();
+        var taxiway = Geo.Offset(From.Lat, From.Lon, 45, 1500);
+        r.Feed(taxiway.lat, taxiway.lon, true, 15, repeat: 3);
+        Assert.DoesNotContain(r.Events, e => e is PeopleShouldAppear or ArrivedAtPickup);   // still rolling
+        r.Feed(taxiway.lat, taxiway.lon, true, 0);
+        var appear = Assert.Single(r.Events.OfType<PeopleShouldAppear>());
+        Assert.Single(r.Events, e => e is ArrivedAtPickup);
+        Assert.InRange(Geo.DistanceM(taxiway.lat, taxiway.lon, appear.Lat, appear.Lon), 5, 30);
+        Assert.Equal(appear.Lat, r.M.MeetLat);
+    }
+
+    [Fact]
+    public void Stopping_on_the_far_side_of_the_region_does_not_count_as_arriving()
+    {
+        var r = new Rig();
+        var away = Geo.Offset(From.Lat, From.Lon, 45, 6000);
+        r.Feed(away.lat, away.lon, true, 0);
+        Assert.Equal(MissionPhase.Booked, r.M.Phase);
     }
 
     [Fact]
@@ -81,7 +105,7 @@ public class FlowTests
     {
         var r = new Rig();
         r.M.Plan.PickupTime = T0.AddDays(3);
-        r.Feed(From.Lat, From.Lon, true, 10);
+        r.Feed(From.Lat, From.Lon, true, 0);
         Assert.DoesNotContain(r.Events, e => e is PeopleShouldAppear or ArrivedAtPickup);
         Assert.Equal(MissionPhase.Booked, r.M.Phase);
     }
@@ -90,7 +114,7 @@ public class FlowTests
     public void A_whole_job_runs_from_arrival_to_landing()
     {
         var r = new Rig();
-        r.Feed(From.Lat, From.Lon, true, 10);
+        r.Feed(From.Lat, From.Lon, true, 0);
         var arrived = Assert.Single(r.Events.OfType<ArrivedAtPickup>());
         Assert.Equal(MissionPhase.AtPickup, r.M.Phase);
 
@@ -137,7 +161,7 @@ public class FlowTests
     public void Walking_over_on_foot_starts_the_meeting_only_when_close()
     {
         var r = new Rig();
-        r.Feed(From.Lat, From.Lon, true, 10);
+        r.Feed(From.Lat, From.Lon, true, 0);
         var far = Geo.Offset(From.MeetingLat, From.MeetingLon, 90, 200);
         r.Feed(far.lat, far.lon, true, 0, engine: true, onFoot: true);
         Assert.DoesNotContain(r.Events, e => e is CanMeetInPerson);
@@ -150,7 +174,7 @@ public class FlowTests
     public void Taking_off_without_loading_leaves_them_standing_there_still_booked()
     {
         var r = new Rig();
-        r.Feed(From.Lat, From.Lon, true, 10);
+        r.Feed(From.Lat, From.Lon, true, 0);
         Assert.Equal(MissionPhase.AtPickup, r.M.Phase);
         r.Feed(From.Lat + 0.01, From.Lon, false, 70, 100, 700, repeat: 4);
         Assert.Equal(MissionPhase.Booked, r.M.Phase);
@@ -161,7 +185,7 @@ public class FlowTests
     public void Landing_somewhere_else_counts_against_you()
     {
         var r = new Rig();
-        r.Feed(From.Lat, From.Lon, true, 10);
+        r.Feed(From.Lat, From.Lon, true, 0);
         r.Flow.CommitLoad(r.M, r.Now);
         r.Feed(From.Lat + 0.01, From.Lon, false, 70, 100, 700, repeat: 4);
         r.Feed(69.0, 23.0, false, 60, 8, -150);
@@ -177,7 +201,7 @@ public class FlowTests
     public void Overweight_takeoff_is_noticed_from_the_real_sim_weight()
     {
         var r = new Rig();
-        r.Feed(From.Lat, From.Lon, true, 10);
+        r.Feed(From.Lat, From.Lon, true, 0);
         r.Flow.CommitLoad(r.M, r.Now);
         r.Feed(From.Lat + 0.01, From.Lon, false, 70, 100, 700, weight: 2650, repeat: 4);
         Assert.True(r.M.WentOverweight);
@@ -188,7 +212,7 @@ public class FlowTests
     public void Touch_and_go_keeps_the_flight_going()
     {
         var r = new Rig();
-        r.Feed(From.Lat, From.Lon, true, 10);
+        r.Feed(From.Lat, From.Lon, true, 0);
         r.Flow.CommitLoad(r.M, r.Now);
         r.Feed(From.Lat + 0.01, From.Lon, false, 70, 100, 700, repeat: 4);
         r.Feed(To.Lat, To.Lon, false, 60, 8, -150);

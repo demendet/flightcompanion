@@ -1,5 +1,6 @@
 using System;
 using System.ComponentModel;
+using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Windows.Input;
@@ -57,6 +58,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
         CompanyName = host.Career.CompanyName;
         PilotKg = host.Career.PilotKg;
         SpeakerModel = host.Settings.SpeakerModel;
+        SpeechModelIndex = Array.FindIndex(SpeechModels.All, m => m.Id == host.Settings.SpeechModel);
+        if (SpeechModelIndex < 0) SpeechModelIndex = 0;
         LanguageIndex = host.Settings.TalkLanguage switch { "en" => 1, "mixed" => 2, _ => 0 };
         UsingSpeakers = host.Settings.UsingSpeakers;
         DoNotDisturb = host.Settings.DoNotDisturb;
@@ -144,8 +147,21 @@ public sealed class MainViewModel : INotifyPropertyChanged
         }
     }
 
+    /// <summary>How fast they talk, as a percent of the voice's normal pace. Applies from their next sentence.</summary>
+    public double VoiceSpeed
+    {
+        get => _host.Settings.VoiceSpeed * 100;
+        set
+        {
+            _host.Settings.VoiceSpeed = value / 100;
+            _volumeDirty = true;
+            Raise();
+        }
+    }
+
     private bool _volumeDirty;
 
+    public ICommand AddVoices => new RelayCommand(_host.AddNorwegianVoices);
     public ICommand Answer => new RelayCommand(_host.Answer);
     public ICommand Decline => new RelayCommand(_host.Decline);
     public ICommand HangUp => new RelayCommand(_host.HangUp);
@@ -172,6 +188,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public string SpeakerModel { get; set; } = "";
     public bool UsingSpeakers { get; set; }
     public bool DoNotDisturb { get; set; }
+    public string[] SpeechModelLabels { get; } = SpeechModels.All.Select(m => m.Label).ToArray();
+    public int SpeechModelIndex { get; set; }
     public int LanguageIndex { get; set; }
     public string[] Languages { get; } = ["Norsk", "English", "Norsk og engelsk, som i virkeligheten"];
     public string[] SpeakerModels { get; } = ["claude-haiku-5-5", "claude-sonnet-5-5", "claude-opus-5-5"];
@@ -181,6 +199,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         _host.Keys.Anthropic = AnthropicKey;
         _host.Keys.ElevenLabs = ElevenLabsKey;
         _host.Settings.SpeakerModel = SpeakerModel;
+        _host.Settings.SpeechModel = SpeechModels.All[Math.Clamp(SpeechModelIndex, 0, SpeechModels.All.Length - 1)].Id;
         _host.Settings.TalkLanguage = LanguageIndex switch { 1 => "en", 2 => "mixed", _ => "no" };
         _host.LanguageChanged();
         _host.Settings.UsingSpeakers = UsingSpeakers;

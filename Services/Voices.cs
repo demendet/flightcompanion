@@ -26,9 +26,10 @@ public sealed class VoiceException(HttpStatusCode status, string message) : Exce
 /// ElevenLabs, always streaming, on the Flash model: the first audio comes while the sentence is still being generated.
 /// The old app used the non-streaming route and waited for the whole clip.
 /// </summary>
-public sealed class ElevenLabs(KeyStore keys) : IVoiceStream
+public sealed class ElevenLabs(KeyStore keys, AppSettings settings) : IVoiceStream
 {
-    private const string Model = "eleven_flash_v2_5";
+    public const string BestModel = "eleven_v4_turbo", FallbackModel = "eleven_flash_v2_5";
+    private string _model = BestModel;
     private static readonly HttpClient Http = new(new SocketsHttpHandler { PooledConnectionLifetime = TimeSpan.FromMinutes(10), EnableMultipleHttp2Connections = true })
     {
         BaseAddress = new Uri("https://api.elevenlabs.io/"), Timeout = Timeout.InfiniteTimeSpan,
@@ -42,14 +43,22 @@ public sealed class ElevenLabs(KeyStore keys) : IVoiceStream
         req.Headers.Add("xi-api-key", keys.ElevenLabs);
         req.Content = JsonContent.Create(new Dictionary<string, object?>
         {
-            ["text"] = text, ["model_id"] = Model, ["language_code"] = language,
+            ["text"] = text, ["model_id"] = _model, ["language_code"] = language,
             ["previous_text"] = previousText,
-            ["voice_settings"] = new { stability = 0.45, similarity_boost = 0.75, style = 0.0, use_speaker_boost = false },
+            ["voice_settings"] = new { stability = 0.45, similarity_boost = 0.75, style = 0.0, use_speaker_boost = false, speed = Math.Clamp(settings.VoiceSpeed, 0.7, 1.2) },
         });
         using var resp = await Http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct);
         if (!resp.IsSuccessStatusCode)
         {
             string err = await resp.Content.ReadAsStringAsync(ct);
+            // Accounts without the newest model still work, with the fast older one.
+            if (_model == BestModel && resp.StatusCode is HttpStatusCode.BadRequest or HttpStatusCode.Forbidden or HttpStatusCode.PaymentRequired && err.Contains("model", StringComparison.OrdinalIgnoreCase))
+            {
+                Log.Info("Voice", $"{BestModel} is not available on this account, using {FallbackModel}: {err[..Math.Min(160, err.Length)]}");
+                _model = FallbackModel;
+                await StreamAsync(text, voiceId, language, previousText, onPcm, ct);
+                return;
+            }
             throw new VoiceException(resp.StatusCode, $"ElevenLabs {(int)resp.StatusCode}: {err[..Math.Min(200, err.Length)]}");
         }
         await using var stream = await resp.Content.ReadAsStreamAsync(ct);
@@ -69,6 +78,66 @@ public sealed class ElevenLabs(KeyStore keys) : IVoiceStream
         using var ms = new MemoryStream();
         await StreamAsync(text, voiceId, language, null, (b, c) => ms.Write(b, 0, c), ct);
         return ms.ToArray();
+    }
+
+    public async Task<string> GetRawAsync(string path, CancellationToken ct)
+    {
+        using var req = new HttpRequestMessage(HttpMethod.Get, path);
+        req.Headers.Add("xi-api-key", keys.ElevenLabs);
+        using var resp = await Http.SendAsync(req, ct);
+        string body = await resp.Content.ReadAsStringAsync(ct);
+        if (!resp.IsSuccessStatusCode) throw new VoiceException(resp.StatusCode, $"ElevenLabs {(int)resp.StatusCode}: {body[..Math.Min(200, body.Length)]}");
+        return body;
+    }
+
+    private static readonly string[] Spoken = ["northern", "nordnorsk", "oslo", "bergen", "trøndersk", "trondersk", "trondheim", "standard", "norwegian", "østnorsk", "vestnorsk"];
+
+    /// <summary>
+    /// Adds Norwegian voices from the ElevenLabs library to the account, a few of each gender: every northern one first, then the
+    /// most used ones. People then sound Norwegian instead of an American voice reading Norwegian. Needs a paid plan. Costs no credits.
+    /// </summary>
+    public async Task<List<string>> AddNorwegianVoicesAsync(int eachGender, CancellationToken ct)
+    {
+        var added = new List<string>();
+        var have = (await ListVoicesAsync(ct)).Select(v => v.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        foreach (var gender in new[] { "male", "female" })
+        {
+            var found = new List<(string Owner, string Id, string Name, string Accent, string Note)>();
+            for (int page = 0; page < 6; page++)
+            {
+                using var doc = JsonDocument.Parse(await GetRawAsync($"v1/shared-voices?language=no&gender={gender}&page_size=100&page={page}&sort=cloned_by_count", ct));
+                foreach (var x in doc.RootElement.GetProperty("voices").EnumerateArray())
+                {
+                    string accent = x.TryGetProperty("accent", out var ac) ? ac.GetString() ?? "" : "";
+                    // The filter also returns foreign voices that can read Norwegian. Only people who actually sound Norwegian count.
+                    if (!Spoken.Any(k => accent.Contains(k, StringComparison.OrdinalIgnoreCase))) continue;
+                    found.Add((x.GetProperty("public_owner_id").GetString() ?? "", x.GetProperty("voice_id").GetString() ?? "", x.GetProperty("name").GetString() ?? "", accent,
+                        x.TryGetProperty("description", out var d) ? d.GetString() ?? "" : ""));
+                }
+                if (!doc.RootElement.TryGetProperty("has_more", out var more) || !more.GetBoolean()) break;
+            }
+            static int Rank(string accent, string note) => accent.Contains("north", StringComparison.OrdinalIgnoreCase) || note.Contains("nordnorsk", StringComparison.OrdinalIgnoreCase) || note.Contains("northern", StringComparison.OrdinalIgnoreCase) ? 0 : 1;
+            int count = 0;
+            foreach (var f in found.OrderBy(f => Rank(f.Accent, f.Note)))
+            {
+                if (count >= eachGender) break;
+                if (have.Contains(f.Name)) { count++; continue; }
+                using var req = new HttpRequestMessage(HttpMethod.Post, $"v1/voices/add/{f.Owner}/{f.Id}");
+                req.Headers.Add("xi-api-key", keys.ElevenLabs);
+                req.Content = JsonContent.Create(new { new_name = f.Name });
+                using var resp = await Http.SendAsync(req, ct);
+                if (!resp.IsSuccessStatusCode)
+                {
+                    string err = await resp.Content.ReadAsStringAsync(ct);
+                    Log.Error("Voice", $"Could not add {f.Name}: {err[..Math.Min(220, err.Length)]}");
+                    if (resp.StatusCode is HttpStatusCode.Forbidden or HttpStatusCode.PaymentRequired or HttpStatusCode.Unauthorized) throw new VoiceException(resp.StatusCode, err[..Math.Min(220, err.Length)]);
+                    continue;
+                }
+                added.Add($"{f.Name} ({gender}, {f.Accent})");
+                count++;
+            }
+        }
+        return added;
     }
 
     public async Task<List<VoiceInfo>> ListVoicesAsync(CancellationToken ct)
@@ -94,8 +163,8 @@ public sealed class ElevenLabs(KeyStore keys) : IVoiceStream
 public sealed class VoiceCaster
 {
     private readonly ElevenLabs _api;
-    private static readonly string[] NorwegianAccents = ["norwegian", "oslo", "bergen", "trondheim", "tromsø", "tromso", "nordnorsk", "northern norw", "finnmark"];
-    private static readonly string[] NorthernAccents = ["tromsø", "tromso", "nordnorsk", "northern norw", "finnmark", "nord-norge"];
+    private static readonly string[] NorwegianAccents = ["norwegian", "oslo", "bergen", "trondheim", "trøndersk", "tromsø", "tromso", "nordnorsk", "northern", "finnmark"];
+    private static readonly string[] NorthernAccents = ["northern", "tromsø", "tromso", "nordnorsk", "finnmark", "nord-norge"];
     private readonly HashSet<string> _banned = [];
     private List<VoiceInfo> _voices = [];
     private readonly Random _rng = new();
@@ -112,8 +181,16 @@ public sealed class VoiceCaster
 
     public string? VoiceFor(Person p, IEnumerable<Person> others)
     {
-        if (p.VoiceId is not null && !_banned.Contains(p.VoiceId)) return p.VoiceId;
         var usable = _voices.Where(v => !_banned.Contains(v.Id)).ToList();
+        bool IsNorsk(VoiceInfo v) => v.Language.Equals("no", StringComparison.OrdinalIgnoreCase) || v.Language.Equals("nb", StringComparison.OrdinalIgnoreCase)
+            || NorwegianAccents.Any(a => v.Accent.Contains(a, StringComparison.OrdinalIgnoreCase));
+        if (p.VoiceId is not null && !_banned.Contains(p.VoiceId))
+        {
+            // Someone Norwegian who was given a foreign voice gets a Norwegian one as soon as the account has any.
+            var current = usable.FirstOrDefault(v => v.Id == p.VoiceId);
+            bool upgrade = p.Language == "no" && current is not null && !IsNorsk(current) && usable.Any(IsNorsk);
+            if (!upgrade) return p.VoiceId;
+        }
         if (usable.Count == 0) return null;
         var same = usable.Where(v => string.IsNullOrEmpty(v.Gender) || v.Gender.Equals(p.Gender, StringComparison.OrdinalIgnoreCase)).ToList();
         if (same.Count == 0) same = usable;
@@ -123,7 +200,11 @@ public sealed class VoiceCaster
         var norsk = same.Where(v => v.Language.Equals("no", StringComparison.OrdinalIgnoreCase) || v.Language.Equals("nb", StringComparison.OrdinalIgnoreCase)
             || NorwegianAccents.Any(a => v.Accent.Contains(a, StringComparison.OrdinalIgnoreCase))).ToList();
         var north = norsk.Where(v => NorthernAccents.Any(a => v.Accent.Contains(a, StringComparison.OrdinalIgnoreCase) || v.Name.Contains(a, StringComparison.OrdinalIgnoreCase))).ToList();
-        var pool = p.Language == "no" && p.Home != "Oslo" && north.Count > 0 ? north : p.Language == "no" && norsk.Count > 0 ? norsk : accent.Count > 0 ? accent : same;
+        var oslo = norsk.Where(v => v.Accent.Contains("oslo", StringComparison.OrdinalIgnoreCase)).ToList();
+        var pool = p.Language != "no" ? (accent.Count > 0 ? accent : same)
+            : p.Home == "Oslo" && oslo.Count > 0 ? oslo
+            : p.Home != "Oslo" && north.Count > 0 ? north
+            : norsk.Count > 0 ? norsk : same;
         var taken = others.Select(o => o.VoiceId).Where(id => id is not null).ToHashSet();
         var free = pool.Where(v => !taken.Contains(v.Id)).ToList();
         var pick = (free.Count > 0 ? free : pool)[_rng.Next((free.Count > 0 ? free : pool).Count)];

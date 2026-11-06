@@ -116,7 +116,7 @@ public sealed class GameHost : IDisposable
         Mic.Partial += p => Post(() => { _partial = p; Changed?.Invoke(); });
         Mic.Final += (text, lang) => Post(() => OnPilotSpoke(text, lang));
         Brain = new Brain(Keys, Settings);
-        Voice = new ElevenLabs(Keys);
+        Voice = new ElevenLabs(Keys, Settings);
         Caster = new VoiceCaster(Voice);
         Clips = new ClipCache(Voice);
 
@@ -194,6 +194,36 @@ public sealed class GameHost : IDisposable
     }
 
     public bool ReadyForCalls => Brain.HasKey && Voice.HasKey;
+
+    /// <summary>Settings button: puts real Norwegian voices on the ElevenLabs account. Needs a paid plan, costs no credits.</summary>
+    public void AddNorwegianVoices()
+    {
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                var added = await Voice.AddNorwegianVoicesAsync(4, _stop.Token);
+                await Caster.RefreshAsync(_stop.Token);
+                Post(() =>
+                {
+                    Toast?.Invoke(L.F("Added {0} Norwegian voices", added.Count));
+                    VoiceHealth = new Health(HealthLevel.Good, L.F("{0} voices available", Caster.Count));
+                    Log.Info("Voice", "Added: " + string.Join(", ", added));
+                    Changed?.Invoke();
+                });
+            }
+            catch (VoiceException ex)
+            {
+                Log.Error("Voice", "Could not add Norwegian voices", ex);
+                Post(() => Toast?.Invoke(L.T("Norwegian voices need a paid ElevenLabs plan")));
+            }
+            catch (System.Net.Http.HttpRequestException ex)
+            {
+                Log.Error("Voice", "Could not reach ElevenLabs", ex);
+                Post(() => Toast?.Invoke(L.T("Could not reach ElevenLabs")));
+            }
+        });
+    }
 
     /// <summary>
     /// The book numbers, corrected by the aircraft actually loaded: its empty weight is what is left after taking away
@@ -796,7 +826,10 @@ public sealed class GameHost : IDisposable
         switch (e)
         {
             case PeopleShouldAppear p:
-                SpawnPeople(p.Mission, p.Place);
+                SpawnPeople(p.Mission, p.Lat, p.Lon);
+                break;
+            case PeopleShouldDisappear gone:
+                DespawnPeople(gone.Mission);
                 break;
             case ArrivedAtPickup a:
                 Toast?.Invoke(a.LateMinutes > 15 ? L.F("You are {0:0} minutes late at {1}", a.LateMinutes, a.Mission.Pickup?.Name) : L.F("Arrived at {0}. Shut down and go meet them.", a.Mission.Pickup?.Name));
@@ -843,7 +876,7 @@ public sealed class GameHost : IDisposable
         _nextChatter = now.AddSeconds(90 + (1 - chat) * 300 + _rng.NextDouble() * 120);
     }
 
-    private void SpawnPeople(Mission m, Place place)
+    private void SpawnPeople(Mission m, double atLat, double atLon)
     {
         if (_spawned.ContainsKey(m.Id)) return;
         var ids = new List<uint>();
@@ -854,7 +887,7 @@ public sealed class GameHost : IDisposable
         {
             string gender = Career.PersonById(p.PersonId)?.Gender ?? "male";
             string title = Figures.Pick(gender, month, _peopleTitles, simList, _rng);
-            var (lat, lon) = Geo.Offset(place.MeetingLat, place.MeetingLon, 60 + i * 40, 3 + i * 1.5);
+            var (lat, lon) = Geo.Offset(atLat, atLon, 60 + i * 40, 3 + i * 1.5);
             if (Sim.Spawn(title, lat, lon, _rng.NextDouble() * 360) is { } id) ids.Add(id);
             i++;
         }

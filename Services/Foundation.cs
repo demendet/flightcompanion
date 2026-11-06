@@ -21,7 +21,11 @@ public static class AppPaths
     public static string MapTiles => Sub(Local, "MapTiles");
     public static string Logs => Sub(Local, "Logs");
 
-    private static string Dir(Environment.SpecialFolder f) => Sub(Environment.GetFolderPath(f), "FlightCompanion");
+    /// <summary>FLIGHTCOMPANION_HOME moves all personal data somewhere else, which is how a clean first start is tested.</summary>
+    private static string Dir(Environment.SpecialFolder f)
+        => Environment.GetEnvironmentVariable("FLIGHTCOMPANION_HOME") is { Length: > 0 } home
+            ? Sub(home, f == Environment.SpecialFolder.ApplicationData ? "Roaming" : "Local")
+            : Sub(Environment.GetFolderPath(f), "FlightCompanion");
 
     private static string Sub(string parent, string name)
     {
@@ -95,29 +99,6 @@ public sealed class KeyStore
             }
         }
         catch (Exception ex) when (ex is CryptographicException or JsonException or IOException) { Log.Error("Keys", "Could not read the key file", ex); }
-        if (_s.ElevenLabs is null) MigrateOldConfig();
-    }
-
-    /// <summary>The ElevenLabs key from the old plain text config carries over once, so nothing needs pasting again.</summary>
-    private void MigrateOldConfig()
-    {
-        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir is not null; dir = dir.Parent)
-        {
-            string p = Path.Combine(dir.FullName, "appsettings.json");
-            if (!File.Exists(p)) continue;
-            try
-            {
-                using var doc = JsonDocument.Parse(File.ReadAllText(p));
-                if (doc.RootElement.TryGetProperty("ApiKeys", out var keys) && keys.TryGetProperty("ElevenLabs", out var k) && k.GetString() is { Length: > 8 } key)
-                {
-                    _s.ElevenLabs = key;
-                    Save();
-                    Log.Info("Keys", "ElevenLabs key carried over from the old config");
-                }
-            }
-            catch (Exception ex) when (ex is JsonException or IOException) { Log.Error("Keys", "Could not read the old config", ex); }
-            return;
-        }
     }
 
     private void Save()
@@ -138,9 +119,12 @@ public sealed class AppSettings
     public bool DoNotDisturb { get; set; }
     /// <summary>Playing through speakers instead of a headset: never listen while someone is speaking, or they hear themselves.</summary>
     public bool UsingSpeakers { get; set; }
-    public string WhisperModelFile { get; set; } = "ggml-large-v3-turbo.bin";
+    /// <summary>Which speech recognition model listens to you. See <see cref="SpeechModels"/>.</summary>
+    public string SpeechModel { get; set; } = SpeechModels.Norwegian.Id;
     public bool MicMuted { get; set; }
     public double VoiceVolume { get; set; } = 1.0;
+    /// <summary>1 is the voice's normal pace. Slightly under, because a stream of quick sentences on a phone is hard to follow.</summary>
+    public double VoiceSpeed { get; set; } = 0.92;
 
     public static AppSettings Load()
     {
@@ -158,6 +142,19 @@ public sealed class AppSettings
         try { File.WriteAllText(AppPaths.Settings, JsonSerializer.Serialize(this, new JsonSerializerOptions { WriteIndented = true })); }
         catch (IOException ex) { Log.Error("Settings", "Could not save settings", ex); }
     }
+}
+
+public sealed record SpeechModelInfo(string Id, string Label, string FileName, string Url, int ApproxMb);
+
+public static class SpeechModels
+{
+    public static readonly SpeechModelInfo Norwegian = new("nb-large-q5", "NB-Whisper (norsk, Nasjonalbiblioteket)", "ggml-nb-whisper-large-q5.bin",
+        "https://huggingface.co/NbAiLab/nb-whisper-large/resolve/main/ggml-model-q5_0.bin", 1081);
+    public static readonly SpeechModelInfo Fast = new("large-v3-turbo", "Whisper Turbo (raskere, mer svensk)", "ggml-large-v3-turbo.bin",
+        "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo.bin", 1624);
+
+    public static readonly SpeechModelInfo[] All = [Norwegian, Fast];
+    public static SpeechModelInfo ById(string? id) => All.FirstOrDefault(m => m.Id == id) ?? Norwegian;
 }
 
 public enum HealthLevel { Off, Working, Good, Problem }

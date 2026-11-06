@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using Avalonia;
 
 namespace FlightCompanion;
@@ -18,6 +19,16 @@ internal static class Program
             // Reads the key from the environment, so it never appears in a command line or a log.
             string? key = Environment.GetEnvironmentVariable("FC_CLAUDE_KEY");
             if (!string.IsNullOrWhiteSpace(key)) new Services.KeyStore().Anthropic = key;
+            return;
+        }
+        if (args.Length == 1 && args[0] == "--add-norwegian-voices")
+        {
+            var keys = new Services.KeyStore();
+            var api = new Services.ElevenLabs(keys, new Services.AppSettings());
+            var added = api.AddNorwegianVoicesAsync(4, System.Threading.CancellationToken.None).GetAwaiter().GetResult();
+            var after = api.ListVoicesAsync(System.Threading.CancellationToken.None).GetAwaiter().GetResult();
+            System.IO.File.WriteAllLines(System.IO.Path.Combine(Services.AppPaths.Local, "voices-added.txt"),
+                added.Concat(after.Select(v => $"HAS {v.Name} | {v.Gender} | {v.Accent} | {v.Language} | {v.Category}")));
             return;
         }
         if (args.Length == 2 && args[0] == "--selftest")

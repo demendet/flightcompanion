@@ -37,15 +37,33 @@ internal static class SelfTest
         await Step("ElevenLabs key and voices", async () =>
         {
             if (string.IsNullOrEmpty(keys.ElevenLabs)) return "NO KEY";
-            var api = new ElevenLabs(keys);
+            var api = new ElevenLabs(keys, settings);
             var list = await api.ListVoicesAsync(ct);
             return $"{list.Count} voices, for example {string.Join(", ", list.Take(4).Select(v => $"{v.Name} ({v.Gender}, {v.Accent})"))}";
+        });
+
+        await Step("ElevenLabs plan", async () =>
+        {
+            if (string.IsNullOrEmpty(keys.ElevenLabs)) return "NO KEY";
+            using var doc = System.Text.Json.JsonDocument.Parse(await new ElevenLabs(keys, settings).GetRawAsync("v1/user/subscription", ct));
+            var r = doc.RootElement;
+            return $"{r.GetProperty("tier").GetString()}, used {r.GetProperty("character_count").GetInt64()} of {r.GetProperty("character_limit").GetInt64()} credits, voice slots {r.GetProperty("voice_slots_used").GetInt32()} of {r.GetProperty("voice_limit").GetInt32()}";
+        });
+
+        await Step("Norwegian voices in the ElevenLabs library", async () =>
+        {
+            if (string.IsNullOrEmpty(keys.ElevenLabs)) return "NO KEY";
+            string raw = await new ElevenLabs(keys, settings).GetRawAsync("v1/shared-voices?language=no&page_size=100&sort=cloned_by_count", ct);
+            File.WriteAllText(Path.Combine(outDir, "shared-voices.json"), raw);
+            using var doc = System.Text.Json.JsonDocument.Parse(raw);
+            var v = doc.RootElement.GetProperty("voices");
+            return $"{v.GetArrayLength()} found, for example " + string.Join("; ", v.EnumerateArray().Take(8).Select(x => $"{x.GetProperty("name").GetString()} ({x.GetProperty("gender").GetString()}, {x.GetProperty("accent").GetString()})"));
         });
 
         await Step("ElevenLabs Norwegian speech, streaming", async () =>
         {
             if (string.IsNullOrEmpty(keys.ElevenLabs)) return "NO KEY";
-            var api = new ElevenLabs(keys);
+            var api = new ElevenLabs(keys, settings);
             var voices = await api.ListVoicesAsync(ct);
             var sw = System.Diagnostics.Stopwatch.StartNew();
             long first = -1, total = 0;
@@ -59,7 +77,8 @@ internal static class SelfTest
                     f.Write(b, 0, c);
                 }, ct);
             }
-            return $"first audio after {first} ms, {total / 48000.0:0.0} s of speech, saved {path}";
+            bool v4 = File.ReadAllLines(Path.Combine(AppPaths.Logs, $"FlightCompanion_{DateTime.Now:yyyy-MM-dd}.log")).TakeLast(40).Any(l => l.Contains("is not available on this account"));
+            return $"{(v4 ? "fell back to Flash" : "V4 Turbo")}: first audio after {first} ms, {total / 48000.0:0.0} s of speech, saved {path}";
         });
 
         await Step("Voice detection on real speech", () =>
@@ -103,9 +122,9 @@ internal static class SelfTest
         {
             using var audio = new AudioOut();
             var fake = new FakeSpeaker();
-            var clips = new ClipCache(new ElevenLabs(keys));
+            var clips = new ClipCache(new ElevenLabs(keys, settings));
             var who = new Game.People.Person { Name = "Test", Language = "no", SpeaksNorwegian = true };
-            using var talk = new Conversation(fake, new SilentVoice(), clips, new VoiceCaster(new ElevenLabs(keys)), audio, who, "none", VoiceFx.Phone, "sys", () => "situation", "no");
+            using var talk = new Conversation(fake, new SilentVoice(), clips, new VoiceCaster(new ElevenLabs(keys, settings)), audio, who, "none", VoiceFx.Phone, "sys", () => "situation", "no");
             talk.Open("Say hello");
             await Task.Delay(1200, ct);              // first sentence has played, the second is playing
             talk.PilotStartedTalking();
@@ -142,11 +161,39 @@ internal static class SelfTest
             return f is null ? "NO DATA" : $"in 20 hours: {f.Summary()} ({f.Category})";
         });
 
-        await Step("Whisper model file", () =>
+        await Step("SimConnect library", () =>
         {
-            string p = Path.Combine(AppPaths.Models, settings.WhisperModelFile);
-            return Task.FromResult(File.Exists(p) ? $"present, {new FileInfo(p).Length / 1_000_000} MB (not loaded, it would use the GPU)" : "MISSING, it downloads on first start");
+            try
+            {
+                using var sim = new Microsoft.FlightSimulator.SimConnect.SimConnect("FlightCompanion selftest", IntPtr.Zero, 0, null, 0);
+                return Task.FromResult("loads, and a sim is running");
+            }
+            catch (System.Runtime.InteropServices.COMException) { return Task.FromResult("loads, no sim running right now"); }
         });
+
+        await Step("Community folder", () => Task.FromResult(SimLink.FindCommunityFolder() ?? "not found, the game still works but places no passenger figures"));
+
+        foreach (var model in SpeechModels.All)
+        {
+            string file = Path.Combine(AppPaths.Models, model.FileName);
+            await Step("Speech model " + model.Id, async () =>
+            {
+                if (!File.Exists(file)) return "not downloaded";
+                string pcm = Path.Combine(outDir, "norsk.pcm");
+                if (!File.Exists(pcm)) return "no speech sample";
+                // On the CPU at idle priority: this compares what each one hears. Speed on the GPU is measured in real calls.
+                Whisper.net.LibraryLoader.RuntimeOptions.RuntimeLibraryOrder = [Whisper.net.LibraryLoader.RuntimeLibrary.Cpu];
+                var bytes = File.ReadAllBytes(pcm);
+                var audio = new List<float>();
+                for (double i = 0; i + 1 < bytes.Length / 2; i += 1.5) audio.Add(BitConverter.ToInt16(bytes, (int)i * 2) / 32768f);
+                using var factory = Whisper.net.WhisperFactory.FromPath(file);
+                using var proc = factory.CreateBuilder().WithLanguage("no").WithThreads(2).Build();
+                var sw = System.Diagnostics.Stopwatch.StartNew();
+                var text = new System.Text.StringBuilder();
+                await foreach (var seg in proc.ProcessAsync(audio.ToArray(), ct)) text.Append(seg.Text);
+                return $"{audio.Count / 16} ms of audio in {sw.ElapsedMilliseconds} ms on 2 CPU threads: {text.ToString().Trim()}";
+            });
+        }
     }
 
     private sealed class FakeSpeaker : ISpeakerModel
