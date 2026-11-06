@@ -179,7 +179,19 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public ICommand RefuelRoundTrip => new RelayCommand(() => { if (Pic?.Fuel is { } f) _host.Refuel(f.RoundTripTarget); });
     public ICommand RefuelFull => new RelayCommand(() => { if (Pic?.Fuel is { } f) _host.Refuel(f.FullTarget); });
     public ICommand CallCustomer => new RelayCommand<string>(_host.CallPerson);
-    public ICommand SelectJob => new RelayCommand<string>(id => { _selected = id; Refresh(); });
+    public ICommand SelectJob => new RelayCommand<string>(id => { _selected = id; AskingToCancel = false; Refresh(); });
+
+    private bool _askingToCancel;
+    /// <summary>Cancelling asks once first, because a stray click would otherwise leave people standing at a strip.</summary>
+    public bool AskingToCancel
+    {
+        get => _askingToCancel;
+        private set { _askingToCancel = value; Raise(); Raise(nameof(NotAskingToCancel)); }
+    }
+    public bool NotAskingToCancel => !_askingToCancel;
+    public ICommand AskCancel => new RelayCommand(() => AskingToCancel = true);
+    public ICommand KeepFlight => new RelayCommand(() => AskingToCancel = false);
+    public ICommand ConfirmCancel => new RelayCommand<string>(id => { AskingToCancel = false; _host.CancelMission(id); });
 
     // Settings
     public string AnthropicKey { get; set; } = "";

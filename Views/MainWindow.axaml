@@ -166,6 +166,17 @@
                             <Button Content="{v:Tr 'Talk to them'}" Command="{Binding Meet}" IsVisible="{Binding Pic.Card.CanMeet, FallbackValue=False}" />
                             <Button Classes="go" Content="{v:Tr 'Settle up and say goodbye'}" Command="{Binding Deplane}" IsVisible="{Binding Pic.Card.CanDeplane, FallbackValue=False}" />
                             <Button Content="{v:Tr 'Call them'}" Command="{Binding CallCustomer}" CommandParameter="{Binding Pic.Card.Id}" IsVisible="{Binding Pic.Card.CanCall, FallbackValue=False}" />
+                            <Panel IsVisible="{Binding Pic.Card.CanCancel, FallbackValue=False}">
+                                <Button Content="{v:Tr 'Cancel this flight'}" Command="{Binding AskCancel}" IsVisible="{Binding NotAskingToCancel}" />
+                            </Panel>
+                        </StackPanel>
+
+                        <StackPanel Spacing="6" IsVisible="{Binding AskingToCancel}">
+                            <TextBlock Foreground="{StaticResource Danger}" Text="{v:Tr 'Cancel this flight? They will not be happy, and the later you do it the worse it gets.'}" />
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <Button Content="{v:Tr 'Yes, cancel it'}" Command="{Binding ConfirmCancel}" CommandParameter="{Binding Pic.Card.Id}" Background="{StaticResource Danger}" Foreground="{StaticResource SignalInk}" />
+                                <Button Content="{v:Tr 'Keep the flight'}" Command="{Binding KeepFlight}" />
+                            </StackPanel>
                         </StackPanel>
 
                         <StackPanel Spacing="3" IsVisible="{Binding Pic.Card.HasReview, FallbackValue=False}">

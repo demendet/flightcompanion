@@ -716,6 +716,17 @@ public sealed class GameHost : IDisposable
 
     // ---- At the strip ---------------------------------------------------------------------------------------------
 
+    public void CancelMission(string id) => Post(() =>
+    {
+        if (Career.MissionById(id) is not { } m || !Cancellation.Allowed(m)) return;
+        if (_talkMission == m) HangUpNow();
+        DespawnPeople(m);
+        Cancellation.Apply(m, Career, DateTimeOffset.Now);
+        Toast?.Invoke(L.F("Cancelled: {0}", m.Title));
+        Save();
+        Changed?.Invoke();
+    });
+
     public void Weigh() => Post(() =>
     {
         if (ActiveMission is not { Phase: MissionPhase.AtPickup or MissionPhase.Boarding } m) return;

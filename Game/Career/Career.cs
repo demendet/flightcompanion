@@ -128,6 +128,38 @@ public static class CareerStore
     }
 }
 
+public static class Cancellation
+{
+    public static bool Allowed(Mission m) => m.Phase is MissionPhase.Booked or MissionPhase.AtPickup or MissionPhase.Boarding;
+
+    /// <summary>Calling it off is always your right, but the closer to the pickup, the worse it lands. Days ahead costs almost nothing.</summary>
+    public static (double Trust, double Reputation) Cost(Mission m, DateTimeOffset now)
+    {
+        double hours = m.Plan.PickupTime is { } due ? (due - now).TotalHours : 24;
+        if (m.Phase != MissionPhase.Booked || hours < 0) return (-20, -2);
+        if (hours < 2) return (-14, -1);
+        if (hours < 24) return (-6, -0.3);
+        return (-2, 0);
+    }
+
+    public static void Apply(Mission m, CareerState c, DateTimeOffset now)
+    {
+        var (trust, reputation) = Cost(m, now);
+        m.Phase = MissionPhase.Cancelled;
+        c.Reputation = Math.Clamp(c.Reputation + reputation, 0, 100);
+        if (c.PersonById(m.CallerId) is { } who)
+        {
+            who.Trust = Math.Clamp(who.Trust + trust, -100, 100);
+            who.LastContact = now;
+            who.Memories.Add(new MemoryNote(now, L.F("Piloten avlyste turen til {0}.", m.Dropoff?.Name)));
+            string text = trust <= -14 ? L.T("You cancelled now? We are standing here with our bags. Thanks for nothing.")
+                : trust <= -6 ? L.T("That was short notice. We will have to find something else.")
+                : L.T("Fine, thanks for letting us know in time.");
+            c.Inbox.Add(new SmsMessage(now, who.Name, text));
+        }
+    }
+}
+
 public static class ReviewMaker
 {
     public static FlightReview Make(Mission m, CareerState c, Person? lead, DateTimeOffset now, double fuelPriceNok = 118)

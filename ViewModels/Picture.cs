@@ -76,6 +76,7 @@ public sealed record CardPicture
     public required bool CanWeigh { get; init; }
     public required bool CanBoard { get; init; }
     public required bool CanDeplane { get; init; }
+    public required bool CanCancel { get; init; }
     public required string BoardLabel { get; init; }
     public required bool HasReview { get; init; }
     public required string ReviewLine { get; init; }
@@ -373,6 +374,7 @@ public static class PictureBuilder
             CanWeigh = canTalkAtStrip && !m.Plan.BaggageWeighed,
             CanBoard = canTalkAtStrip,
             CanDeplane = m.Phase == MissionPhase.Landed && t is { OnGround: true, GroundSpeedKt: < 1 },
+            CanCancel = Cancellation.Allowed(m),
             BoardLabel = L.T(m.Plan.Passengers.Count > 0 ? "Board everyone" : "Load the cargo"),
             HasReview = r is not null,
             ReviewLine = r is null ? "" : L.F("{0:0.0} of 5, paid {1}", r.Stars, Nok(r.PayNok + r.TipNok)) + (r.RepairNok > 0 ? L.F(", mechanic {0}", Nok(r.RepairNok)) : "") + L.F(r.ReputationDelta >= 0 ? ", reputation up {0:0.0}" : ", reputation down {0:0.0}", Math.Abs(r.ReputationDelta)),

@@ -387,6 +387,52 @@ public class CareerTests
     }
 }
 
+public class CancelTests
+{
+    private static readonly DateTimeOffset Now = new(2026, 11, 6, 12, 0, 0, TimeSpan.FromHours(1));
+
+    private static (CareerState, Mission, Person) Booked(double hoursAhead, MissionPhase phase = MissionPhase.Booked)
+    {
+        var c = new CareerState { Reputation = 50 };
+        var p = new Person { Name = "Kari", Trust = 20 };
+        c.People.Add(p);
+        var m = new Mission { CallerId = p.Id, Phase = phase, Plan = new MissionPlan { PickupId = "ENNA", DropoffId = "ENMP", PickupTime = Now.AddHours(hoursAhead) } };
+        c.Missions.Add(m);
+        return (c, m, p);
+    }
+
+    [Fact]
+    public void Cancelling_days_ahead_costs_little_and_they_are_told()
+    {
+        var (c, m, p) = Booked(72);
+        Cancellation.Apply(m, c, Now);
+        Assert.Equal(MissionPhase.Cancelled, m.Phase);
+        Assert.Equal(50, c.Reputation);
+        Assert.Equal(18, p.Trust);
+        Assert.Single(c.Inbox);
+        Assert.Single(p.Memories);
+    }
+
+    [Fact]
+    public void Cancelling_when_they_are_already_waiting_costs_much_more()
+    {
+        var (c, m, p) = Booked(-0.5, MissionPhase.AtPickup);
+        Cancellation.Apply(m, c, Now);
+        Assert.Equal(48, c.Reputation);
+        Assert.Equal(0, p.Trust);
+    }
+
+    [Theory]
+    [InlineData(MissionPhase.Booked, true)]
+    [InlineData(MissionPhase.AtPickup, true)]
+    [InlineData(MissionPhase.Boarding, true)]
+    [InlineData(MissionPhase.Loaded, false)]
+    [InlineData(MissionPhase.Airborne, false)]
+    [InlineData(MissionPhase.Complete, false)]
+    public void You_cannot_cancel_once_they_are_on_board(MissionPhase phase, bool allowed)
+        => Assert.Equal(allowed, Cancellation.Allowed(new Mission { Phase = phase }));
+}
+
 public class SightTests
 {
     private const double Lat = 69.5, Lon = 24.5;
