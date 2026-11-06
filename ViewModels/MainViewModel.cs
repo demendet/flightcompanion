@@ -1,3 +1,5 @@
+using FlightCompanion.Game.Missions;
+using FlightCompanion.Game.World;
 using System;
 using System.ComponentModel;
 using System.Linq;
@@ -24,7 +26,7 @@ public sealed class RelayCommand<T>(Action<T> run) : ICommand
     public void Execute(object? parameter) { if (parameter is T t) run(t); }
 }
 
-public enum Page { Board, Map, People, Logbook, Money, Settings }
+public enum Page { Board, Plan, Map, People, Logbook, Money, Settings }
 
 public sealed class MainViewModel : INotifyPropertyChanged
 {
@@ -130,6 +132,15 @@ public sealed class MainViewModel : INotifyPropertyChanged
             Raise();
             Raise(nameof(PeopleShown));
             Raise(nameof(TalksShown));
+            if (value?.PlanPeople is { } people && !people.SequenceEqual(_planPeople))
+            {
+                string? keep = _planPerson?.Id;
+                _planPeople = people;
+                Raise(nameof(PlanPeople));
+                // Your own voice is the first choice after someone new, the first time this page has anyone.
+                _planPerson = people.FirstOrDefault(x => x.Id == keep && keep is not null) ?? (people.Count > 1 && keep is null && _planPerson is null ? people[1] : people[0]);
+                Raise(nameof(SelectedPlanPerson));
+            }
             Raise(nameof(SelectedPerson));
             Raise(nameof(HasSelectedPerson));
         }
@@ -192,6 +203,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public bool HasToast => _toast.Length > 0;
 
     public bool OnBoard => _page == Page.Board;
+    public bool OnPlan => _page == Page.Plan;
     public bool OnMap => _page == Page.Map;
     public bool OnPeople => _page == Page.People;
     public bool OnLogbook => _page == Page.Logbook;
@@ -201,11 +213,49 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private void Go(Page p)
     {
         _page = p;
-        Raise(nameof(OnBoard)); Raise(nameof(OnMap)); Raise(nameof(OnPeople)); Raise(nameof(OnLogbook)); Raise(nameof(OnMoney)); Raise(nameof(OnSettings));
+        Raise(nameof(OnBoard)); Raise(nameof(OnPlan)); Raise(nameof(OnMap)); Raise(nameof(OnPeople)); Raise(nameof(OnLogbook)); Raise(nameof(OnMoney)); Raise(nameof(OnSettings));
     }
 
     public ICommand GoBoard => new RelayCommand(() => Go(Page.Board));
     public ICommand GoMap => new RelayCommand(() => Go(Page.Map));
+    public ICommand GoPlan => new RelayCommand(() => Go(Page.Plan));
+
+    // Your own trip
+    private static readonly MissionTemplate[] PlanJobs = MissionCatalog.Templates.OrderBy(t => L.T(t.Title)).ToArray();
+    private static readonly Place[] PlanPlaces = WorldData.Places.OrderBy(p => p.Name).ToArray();
+    public string[] PlanJobLabels { get; } = PlanJobs.Select(t => L.T(t.Title)).ToArray();
+    public string[] PlanPlaceLabels { get; } = PlanPlaces.Select(p => p.Name).ToArray();
+    private System.Collections.Generic.IReadOnlyList<PlanPerson> _planPeople = [];
+    /// <summary>Stays the same list until someone is added, or the choice would jump back on every update.</summary>
+    public System.Collections.Generic.IReadOnlyList<PlanPerson> PlanPeople => _planPeople;
+    private PlanPerson? _planPerson;
+    public PlanPerson? SelectedPlanPerson { get => _planPerson; set { _planPerson = value; ClearCode(); Raise(); } }
+    private int _planJob = Math.Max(0, Array.FindIndex(PlanJobs, t => t.Id == "town_errand"));
+    public int PlanJobIndex { get => _planJob; set { _planJob = value; ClearCode(); Raise(); } }
+    private int _planFrom = Math.Max(0, Array.FindIndex(PlanPlaces, p => p.Id == "ENMP"));
+    public int PlanFromIndex { get => _planFrom; set { _planFrom = value; ClearCode(); Raise(); } }
+    private int _planTo = Math.Max(0, Array.FindIndex(PlanPlaces, p => p.Id == "ENNA"));
+    public int PlanToIndex { get => _planTo; set { _planTo = value; ClearCode(); Raise(); } }
+    private string _tripCode = "";
+    public string TripCodeText { get => _tripCode; private set { _tripCode = value; Raise(); Raise(nameof(HasTripCode)); } }
+    public bool HasTripCode => _tripCode.Length > 0;
+    public string PastedCode { get; set; } = "";
+    private void ClearCode() { if (_tripCode.Length > 0) TripCodeText = ""; }
+    private void MakePlan(bool start)
+    {
+        if (_planJob < 0 || _planFrom < 0 || _planTo < 0) return;
+        _host.MakeTrip(_planPerson?.Id, PlanJobs[_planJob].Id, PlanPlaces[_planFrom].Id, PlanPlaces[_planTo].Id, start, code => Avalonia.Threading.Dispatcher.UIThread.Post(() => TripCodeText = code));
+        if (start) Go(Page.Board);
+    }
+    public ICommand PlanCall => new RelayCommand(() =>
+    {
+        if (_tripCode.Length > 0) { _host.StartTrip(_tripCode); Go(Page.Board); }
+        else MakePlan(true);
+    });
+    public ICommand PlanMakeCode => new RelayCommand(() => MakePlan(false));
+    public ICommand PlanRunPasted => new RelayCommand(() => { _host.StartTrip(PastedCode); Go(Page.Board); });
+    /// <summary>Layout preview only.</summary>
+    public void PreviewPlan() { Go(Page.Plan); RefreshNow(); }
     public ICommand GoPeople => new RelayCommand(() => Go(Page.People));
     public ICommand GoLogbook => new RelayCommand(() => Go(Page.Logbook));
     public ICommand GoMoney => new RelayCommand(() => Go(Page.Money));

@@ -443,6 +443,34 @@ public sealed class GameHost : IDisposable
             "You just answered your phone. The pilot is calling. Answer with your name.");
     });
 
+    /// <summary>Your own trip: who, what, from where to where. Comes back as a code you can send to someone else.</summary>
+    public void MakeTrip(string? personId, string templateId, string fromId, string toId, bool startNow, Action<string> gotCode) => Post(() =>
+    {
+        if (MissionCatalog.ById(templateId) is not { } tpl) return;
+        int seed = _rng.Next();
+        var caller = Career.PersonById(personId) ?? TripCode.NewCaller(tpl, new Random(seed));
+        string code = TripCode.Encode(new TripChoice { TemplateId = templateId, FromId = fromId, ToId = toId, Seed = seed, Caller = caller });
+        gotCode(code);
+        if (startNow) StartTripNow(code);
+    });
+
+    public void StartTrip(string code) => Post(() => StartTripNow(code));
+
+    private void StartTripNow(string code)
+    {
+        if (TripCode.Decode(code) is not { } trip) { Toast?.Invoke(L.T("That trip code does not work")); return; }
+        if (_ringing is not null || _talk is not null) { Toast?.Invoke(L.T("Finish the call you are in first")); return; }
+        if (!ReadyForCalls) { Toast?.Invoke(L.T("Add your Claude and ElevenLabs keys in Settings first")); return; }
+        var now = DateTimeOffset.Now;
+        var m = TripCode.Start(trip, Career, now);
+        if (Career.PersonById(m.CallerId) is not { } caller) return;
+        if (caller.VoiceId is not null && caller.VoiceId == Caster.ClonedVoiceId) Career.FavoriteCallerId = caller.Id;
+        StartRinging(new RingInfo(caller, m, null, now));
+        _ = RefreshForecast(m);
+        Save();
+        Changed?.Invoke();
+    }
+
     public void RequestJob() => Post(() =>
     {
         if (_ringing is not null || _talk is not null || !ReadyForCalls) return;

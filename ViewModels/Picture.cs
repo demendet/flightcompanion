@@ -51,6 +51,7 @@ public sealed record PersonRow
 }
 public sealed record LogRow(string When, string Title, string Route, string Stars, string StarSigns, string Money, string Quote, IReadOnlyList<string> Points, IBrush MoneyBrush);
 public sealed record StatRow(string Value, string Label);
+public sealed record PlanPerson(string? Id, string Label);
 public sealed record TalkLine(string Who, string Text, IBrush Brush);
 public sealed record TalkRow(string When, string Names, string What, string Flag, IBrush FlagBrush, bool HasFlag, bool Offence, string Count, IReadOnlyList<TalkLine> Lines);
 public sealed record LedgerRow(string When, string Text, string Amount, IBrush AmountBrush);
@@ -157,6 +158,7 @@ public sealed record Picture
     public required IReadOnlyList<PersonRow> People { get; init; }
     public required bool NoPeople { get; init; }
     public required string PeopleSummary { get; init; }
+    public required IReadOnlyList<PlanPerson> PlanPeople { get; init; }
     public required IReadOnlyList<StatRow> LogStats { get; init; }
     public required IReadOnlyList<TalkRow> Talks { get; init; }
     public required bool NoFlights { get; init; }
@@ -268,6 +270,9 @@ public static class PictureBuilder
             NoJobs = jobs.Count == 0,
             Inbox = c.Inbox.AsEnumerable().Reverse().Take(15).Select(s => new SmsRow(Clock.ToLocal(s.When).ToString("ddd HH:mm", Culture), s.From, s.Text)).ToList(),
             People = c.People.Where(p => p.FlightsWithYou > 0 || p.Talks > 0).OrderByDescending(p => p.LastContact).Take(200).Select(p => BuildPerson(h, p)).ToList(),
+            PlanPeople = new[] { new PlanPerson(null, L.T("Someone new")) }
+                .Concat(c.People.Where(x => x.VoiceId is not null && x.VoiceId == h.Caster.ClonedVoiceId).Select(x => new PlanPerson(x.Id, L.F("{0} (your voice)", x.Name))))
+                .Concat(c.People.Where(x => (x.VoiceId is null || x.VoiceId != h.Caster.ClonedVoiceId) && (x.Talks > 0 || x.FlightsWithYou > 0)).OrderBy(x => x.Name).Select(x => new PlanPerson(x.Id, x.Name))).ToList(),
             PeopleSummary = L.F("{0} people know you", c.People.Count(p => p.FlightsWithYou > 0 || p.Talks > 0)) + ". "
                 + L.F("{0} trust you", c.People.Count(p => (p.FlightsWithYou > 0 || p.Talks > 0) && p.Trust > 15)) + ". "
                 + L.F("{0} are wary of you", c.People.Count(p => (p.FlightsWithYou > 0 || p.Talks > 0) && p.Trust < -15)) + ".",

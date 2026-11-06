@@ -146,6 +146,11 @@ internal static class LayoutPreview
             AvaloniaHeadlessPlatform.ForceRenderTimerTick();
             Dispatcher.UIThread.RunJobs();
             w.CaptureRenderedFrame()?.Save(Path.Combine(dir, "map.png"));
+            vm.PreviewPlan();
+            Dispatcher.UIThread.RunJobs();
+            AvaloniaHeadlessPlatform.ForceRenderTimerTick();
+            Dispatcher.UIThread.RunJobs();
+            w.CaptureRenderedFrame()?.Save(Path.Combine(dir, "plan.png"));
             foreach (var (tab, file) in new[] { (0, "logflights.png"), (1, "logtalks.png") })
             {
                 vm.PreviewLog(tab);

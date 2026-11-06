@@ -294,10 +294,10 @@ public static class TwistCatalog
 
 public static class MissionFactory
 {
-    public static Mission Create(MissionTemplate tpl, CareerStateView career, Random rng, DateTimeOffset now, Person? caller = null)
+    public static Mission Create(MissionTemplate tpl, CareerStateView career, Random rng, DateTimeOffset now, Person? caller = null, Place? chosenFrom = null, Place? chosenTo = null)
     {
         caller ??= career.PickCaller(tpl, rng);
-        var (from, to) = PickRoute(tpl, career.CurrentLat, career.CurrentLon, rng);
+        var (from, to) = chosenFrom is not null && chosenTo is not null ? (chosenFrom, chosenTo) : PickRoute(tpl, career.CurrentLat, career.CurrentLon, rng);
         var m = new Mission
         {
             TemplateId = tpl.Id, Title = L.T(tpl.Title), CreatedAt = now, CallerId = caller.Id,

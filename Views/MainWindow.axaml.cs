@@ -21,6 +21,11 @@ public partial class MainWindow : Window
         };
     }
 
+    private async void CopyTripCode(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (_vm is { HasTripCode: true } vm && Clipboard is { } clipboard) await clipboard.SetTextAsync(vm.TripCodeText);
+    }
+
     /// <summary>New words appear at the bottom, so that is where the chat stays.</summary>
     private void OnVmChanged(object? sender, PropertyChangedEventArgs e)
     {

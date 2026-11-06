@@ -1,3 +1,4 @@
+using FlightCompanion.Game;
 using FlightCompanion.Game.Aviation;
 using FlightCompanion.Game.Career;
 using FlightCompanion.Game.Flight;
@@ -384,6 +385,82 @@ public class CareerTests
     {
         Assert.True(Sun.IsDark(new DateTimeOffset(2026, 12, 21, 3, 0, 0, TimeSpan.Zero), 69.5, 24.4));
         Assert.False(Sun.IsDark(new DateTimeOffset(2026, 6, 21, 22, 0, 0, TimeSpan.Zero), 69.5, 24.4));
+    }
+}
+
+public class TripCodeTests
+{
+    private static readonly DateTimeOffset T0 = new(2026, 11, 6, 12, 0, 0, TimeSpan.FromHours(1));
+    private static TripChoice Trip(string template = "cabin_friends", string voice = "clone-voice") => new()
+    {
+        TemplateId = template, FromId = "ENMP", ToId = "ENNA", Seed = 1234,
+        Caller = new Person { Name = "Mathis Guttorm", Home = "Sápmi", Language = "no", SpeaksNorwegian = true, Gender = "male", Age = 41, Job = "reindeer herder", Personality = "Dry.", Temper = 0.4, VoiceId = voice },
+    };
+
+    [Fact]
+    public void A_code_survives_the_trip_to_another_pc()
+    {
+        var back = TripCode.Decode(TripCode.Encode(Trip()));
+        Assert.NotNull(back);
+        Assert.Equal("cabin_friends", back!.TemplateId);
+        Assert.Equal("ENMP", back.FromId);
+        Assert.Equal("ENNA", back.ToId);
+        Assert.Equal("Mathis Guttorm", back.Caller.Name);
+        Assert.Equal("clone-voice", back.Caller.VoiceId);
+        Assert.Equal(0.4, back.Caller.Temper);
+    }
+
+    [Fact]
+    public void History_with_the_person_never_goes_along()
+    {
+        var t = Trip();
+        t.Caller.Trust = -80;
+        t.Caller.Memories.Add(new MemoryNote(T0, "hemmelig"));
+        var back = TripCode.Decode(TripCode.Encode(t))!;
+        Assert.Equal(0, back.Caller.Trust);
+        Assert.Empty(back.Caller.Memories);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData(null)]
+    [InlineData("hei")]
+    [InlineData("FC1-")]
+    [InlineData("FC1-ikke!gyldig")]
+    public void Rubbish_is_refused_without_a_crash(string? code) => Assert.Null(TripCode.Decode(code));
+
+    [Fact]
+    public void Two_careers_get_exactly_the_same_trip()
+    {
+        var mine = new CareerState { Reputation = 80, LastLat = 70, LastLon = 25 };
+        mine.People.Add(new Person { Name = "En annen", Talks = 3 });
+        var his = new CareerState();
+        string code = TripCode.Encode(Trip());
+        var a = TripCode.Start(TripCode.Decode(code)!, mine, T0);
+        var b = TripCode.Start(TripCode.Decode(code)!, his, T0);
+        Assert.Equal(a.Premise, b.Premise);
+        Assert.Equal(a.Truth.BaggageKg, b.Truth.BaggageKg);
+        Assert.Equal(a.Twists, b.Twists);
+        Assert.Equal(a.Truth.Passengers.Select(p => p.Name), b.Truth.Passengers.Select(p => p.Name));
+        Assert.Equal("ENMP", a.Plan.PickupId);
+        Assert.Equal("ENNA", a.Plan.DropoffId);
+        Assert.Contains("Mollisjok", a.Premise);
+        Assert.Equal(MissionPhase.Ringing, a.Phase);
+    }
+
+    [Fact]
+    public void Someone_you_know_keeps_their_history_and_nobody_else_keeps_that_voice()
+    {
+        var c = new CareerState();
+        var known = new Person { Name = "Mathis Guttorm", Trust = 40, Talks = 5 };
+        var old = new Person { Name = "Odd Hansen", VoiceId = "clone-voice" };
+        c.People.Add(known);
+        c.People.Add(old);
+        var m = TripCode.Start(Trip(), c, T0);
+        Assert.Equal(known.Id, m.CallerId);
+        Assert.Equal(40, known.Trust);
+        Assert.Equal("clone-voice", known.VoiceId);
+        Assert.Null(old.VoiceId);
     }
 }
 

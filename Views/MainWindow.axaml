@@ -24,6 +24,7 @@
                 </StackPanel>
                 <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="2" VerticalAlignment="Center">
                     <Button Classes="nav" Content="{v:Tr 'Operations'}" Command="{Binding GoBoard}" />
+                    <Button Classes="nav" Content="{v:Tr 'New trip'}" Command="{Binding GoPlan}" />
                     <Button Classes="nav" Content="{v:Tr 'Map'}" Command="{Binding GoMap}" />
                     <Button Classes="nav" Content="{v:Tr 'People'}" Command="{Binding GoPeople}" />
                     <Button Classes="nav" Content="{v:Tr 'Logbook'}" Command="{Binding GoLogbook}" />
@@ -290,6 +291,44 @@
                 </Grid>
             </Border>
         </Grid>
+
+        <!-- A trip you choose yourself -->
+        <ScrollViewer Grid.Row="2" IsVisible="{Binding OnPlan}" Padding="32,20">
+            <StackPanel Spacing="16" MaxWidth="720" HorizontalAlignment="Left">
+                <StackPanel Spacing="2">
+                    <TextBlock Classes="title" Text="{v:Tr 'New trip'}" />
+                    <TextBlock Classes="quiet" Text="{v:Tr 'Choose who calls, what it is about and where it goes. You still agree on people, bags and price on the phone.'}" />
+                </StackPanel>
+                <Grid ColumnDefinitions="130,*" RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="10">
+                    <TextBlock Classes="quiet" VerticalAlignment="Center" Text="{v:Tr 'Who'}" />
+                    <ComboBox Grid.Column="1" HorizontalAlignment="Stretch" ItemsSource="{Binding PlanPeople}" SelectedItem="{Binding SelectedPlanPerson}">
+                        <ComboBox.ItemTemplate>
+                            <DataTemplate x:DataType="vm:PlanPerson"><TextBlock Text="{Binding Label}" /></DataTemplate>
+                        </ComboBox.ItemTemplate>
+                    </ComboBox>
+                    <TextBlock Grid.Row="1" Classes="quiet" VerticalAlignment="Center" Text="{v:Tr 'What'}" />
+                    <ComboBox Grid.Row="1" Grid.Column="1" HorizontalAlignment="Stretch" ItemsSource="{Binding PlanJobLabels}" SelectedIndex="{Binding PlanJobIndex}" />
+                    <TextBlock Grid.Row="2" Classes="quiet" VerticalAlignment="Center" Text="{v:Tr 'From'}" />
+                    <ComboBox Grid.Row="2" Grid.Column="1" HorizontalAlignment="Stretch" ItemsSource="{Binding PlanPlaceLabels}" SelectedIndex="{Binding PlanFromIndex}" />
+                    <TextBlock Grid.Row="3" Classes="quiet" VerticalAlignment="Center" Text="{v:Tr 'To'}" />
+                    <ComboBox Grid.Row="3" Grid.Column="1" HorizontalAlignment="Stretch" ItemsSource="{Binding PlanPlaceLabels}" SelectedIndex="{Binding PlanToIndex}" />
+                </Grid>
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <Button Classes="go" Content="{v:Tr 'Make the phone ring'}" Command="{Binding PlanCall}" />
+                    <Button Content="{v:Tr 'Make a code for a friend'}" Command="{Binding PlanMakeCode}" />
+                </StackPanel>
+                <StackPanel Spacing="6" IsVisible="{Binding HasTripCode}">
+                    <TextBlock Classes="head" Text="{v:Tr 'Send this to your friend. You both get the same trip, with the same people.'}" />
+                    <TextBox IsReadOnly="True" TextWrapping="Wrap" MaxHeight="110" Text="{Binding TripCodeText}" />
+                    <Button Content="{v:Tr 'Copy the code'}" Click="CopyTripCode" />
+                </StackPanel>
+                <StackPanel Spacing="6">
+                    <TextBlock Classes="head" Text="{v:Tr 'Got a code from a friend?'}" />
+                    <TextBox TextWrapping="Wrap" MaxHeight="110" Watermark="FC1-..." Text="{Binding PastedCode}" />
+                    <Button Content="{v:Tr 'Run this trip'}" Command="{Binding PlanRunPasted}" HorizontalAlignment="Left" />
+                </StackPanel>
+            </StackPanel>
+        </ScrollViewer>
 
         <!-- The big map -->
         <Grid Grid.Row="2" ColumnDefinitions="*,330" IsVisible="{Binding OnMap}">
