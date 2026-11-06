@@ -68,6 +68,7 @@ public static partial class SpeechText
     {
         bool token = HangToken().IsMatch(s);
         string text = HangToken().Replace(s, " ").Trim();
+        if (!text.Any(char.IsLetterOrDigit)) text = "";
         bool hangWords = HangWords().IsMatch(text);
         bool firstPerson = Speaker().IsMatch(text);
         if ((hangWords || LineWords().IsMatch(text)) && !firstPerson) return ("", token || hangWords);

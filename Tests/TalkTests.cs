@@ -213,6 +213,33 @@ public class HangUpTests
     }
 }
 
+public class HangUpStreamTests
+{
+    /// <summary>The token comes last with no full stop after it, so it only ever arrives when the reply is flushed. This is what broke.</summary>
+    [Theory]
+    [InlineData("Nei, det er ferdig. Ikke ring meg igjen. <<hangup>>")]
+    [InlineData("Nei, det er ferdig. Ikke ring meg igjen.<<hangup>>")]
+    [InlineData("Nei, det er ferdig. Ikke ring meg igjen. <<hangup>>.")]
+    public void The_token_is_found_at_the_end_of_a_stream_and_never_spoken(string reply)
+    {
+        var splitter = new SpeakerSplitter(["Máret"]);
+        var pieces = new List<string>();
+        foreach (char c in reply) pieces.AddRange(splitter.Push(c.ToString()).Select(x => x.Sentence));
+        pieces.AddRange(splitter.Flush().Select(x => x.Sentence));
+        bool hang = false;
+        var spoken = new List<string>();
+        foreach (var piece in pieces)
+        {
+            var (text, h) = SpeechText.TakeHangup(piece);
+            hang |= h;
+            if (SpeechText.Clean(text) is { Length: > 0 } c) spoken.Add(c);
+        }
+        Assert.True(hang);
+        Assert.DoesNotContain(spoken, x => x.Contains("hangup") || x.Contains('<'));
+        Assert.Contains(spoken, x => x.Contains("ring meg igjen"));
+    }
+}
+
 public class NameFixerTests
 {
     private static readonly NameFixer Fixer = new(["Mollisjok", "Karasjok", "Honningsvåg", "Lakselv", "Kirkenes", "Alta", "Hammerfest", "Mollisjok lodge", "the Sautso canyon", "Kamilla Hansen", "Per Olsen"]);

@@ -508,6 +508,7 @@ public sealed class GameHost : IDisposable
         _partial = "";
         var fx = !Settings.RadioEffect ? VoiceFx.Clear : mode switch { TalkMode.Phone => VoiceFx.Phone, TalkMode.Intercom => VoiceFx.Intercom, _ => VoiceFx.Clear };
         var talk = new Conversation(Brain, Voice, Clips, Caster, Audio, cast, fx, SystemFor(cast, m, mode, reason), () => SituationNow(m), Settings.TalkLanguage);
+        talk.CanHangUp = mode == TalkMode.Phone;
         talk.PersonSaid += (name, s) => Post(() => AddChat(name, s, false));
         talk.PilotSaid += s => Post(() => { _partial = ""; AddChat(Career.PilotName, s, true); });
         talk.ExchangeDone += () => Post(() => OnExchangeDone(talk));

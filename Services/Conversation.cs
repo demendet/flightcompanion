@@ -72,11 +72,13 @@ public sealed class Conversation : IDisposable
     public event Action? HungUp;
     public bool HungUpOnPilot { get; private set; }
     private volatile bool _hanging;
+    /// <summary>Only a phone call can be hung up on. In the aircraft the same words change nothing.</summary>
+    public bool CanHangUp { get; set; }
 
     private string Speakable(string s)
     {
         var (text, hang) = SpeechText.TakeHangup(s);
-        if (hang) _hanging = true;
+        if (hang && CanHangUp) _hanging = true;
         return SpeechText.Clean(text);
     }
     public bool IsSpeaking => _channel.IsPlaying;
@@ -171,6 +173,8 @@ public sealed class Conversation : IDisposable
 
     public void PilotStartedTalking()
     {
+        // They have already hung up: their goodbye plays out, and nothing the pilot says now reaches them.
+        if (_hanging) return;
         // Talking over someone: everything stops now, not when the sentence ends.
         CancelTurn();
     }
@@ -207,7 +211,7 @@ public sealed class Conversation : IDisposable
 
     private void StartTurn(string userContent, string? pilotText)
     {
-        if (_ended || Panicking) return;
+        if (_ended || Panicking || _hanging) return;
         CancelTurn();
         var cts = new CancellationTokenSource();
         lock (_lock) _turnCts = cts;
@@ -299,7 +303,7 @@ public sealed class Conversation : IDisposable
                 }
             }
             foreach (var (who, s) in splitter.Flush())
-                if (SpeechText.Clean(s) is { Length: > 0 } last) await sentences.Writer.WriteAsync((ByLabel(who), last), ct);
+                if (Speakable(s) is { Length: > 0 } last) await sentences.Writer.WriteAsync((ByLabel(who), last), ct);
             AiHealth?.Invoke(new Health(HealthLevel.Good, Game.L.T("Claude working")));
         }
         catch (OperationCanceledException) { }
