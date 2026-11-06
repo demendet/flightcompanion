@@ -126,7 +126,7 @@ public sealed class TileMap : Control, Avalonia.Rendering.ICustomHitTest
     public PlanePos? Plane { get => GetValue(PlaneProperty); set => SetValue(PlaneProperty, value); }
     static TileMap() => AffectsRender<TileMap>(DataProperty, PlaneProperty);
 
-    private const int TileSize = 256, MinZoom = 5, MaxZoom = 13;
+    private const int TileSize = 256, MinZoom = 4, MaxZoom = 16;
     private static readonly HttpClient Http = MakeHttp();
     private static readonly ConcurrentDictionary<(int, int, int), Bitmap?> Tiles = new();
     private static readonly Typeface Face = new("Bahnschrift, Inter");
@@ -218,7 +218,14 @@ public sealed class TileMap : Control, Avalonia.Rendering.ICustomHitTest
     protected override void OnPointerWheelChanged(PointerWheelEventArgs e)
     {
         base.OnPointerWheelChanged(e);
+        // The spot under the cursor stays under the cursor.
+        var at = e.GetPosition(this);
+        var center = World(_cLat, _cLon, _zoom);
+        var (lat, lon) = Unworld(new Point(center.X + at.X - Bounds.Width / 2, center.Y + at.Y - Bounds.Height / 2), _zoom);
         SetZoom(_zoom + (e.Delta.Y > 0 ? 1 : -1));
+        var spot = World(lat, lon, _zoom);
+        (_cLat, _cLon) = Unworld(new Point(spot.X - at.X + Bounds.Width / 2, spot.Y - at.Y + Bounds.Height / 2), _zoom);
+        if (_follow) _follow = false;
         e.Handled = true;
     }
 
@@ -263,6 +270,13 @@ public sealed class TileMap : Control, Avalonia.Rendering.ICustomHitTest
             if (key != _fittedFor) { _fittedFor = key; FitToRoute(d, w, h); }
         }
         if (_follow && plane is not null) { _cLat = plane.Lat; _cLon = plane.Lon; }
+        if (!_userMoved && d is not null && plane is not null)
+        {
+            // The aircraft left the picture: show the route and where it has got to again.
+            var a = World(plane.Lat, plane.Lon, _zoom);
+            var c0 = World(_cLat, _cLon, _zoom);
+            if (Math.Abs(a.X - c0.X) > w * 0.46 || Math.Abs(a.Y - c0.Y) > h * 0.46) FitToRoute(d, w, h);
+        }
 
         int zoom = _zoom;
         var center = World(_cLat, _cLon, zoom);
@@ -277,8 +291,19 @@ public sealed class TileMap : Control, Avalonia.Rendering.ICustomHitTest
         int max = 1 << zoom;
         for (int x = x0; x <= x1; x++)
             for (int y = y0; y <= y1; y++)
-                if (y >= 0 && y < max && x >= 0 && x < max && GetTile(zoom, x, y) is { } bmp)
-                    ctx.DrawImage(bmp, new Rect(x * TileSize - center.X + w / 2, y * TileSize - center.Y + h / 2, TileSize, TileSize));
+            {
+                if (y < 0 || y >= max || x < 0 || x >= max) continue;
+                var dest = new Rect(x * TileSize - center.X + w / 2, y * TileSize - center.Y + h / 2, TileSize, TileSize);
+                if (GetTile(zoom, x, y) is { } bmp) { ctx.DrawImage(bmp, dest); continue; }
+                // Still on its way: a blown up piece of the tile above it, so zooming never shows empty squares.
+                for (int up = 1; up <= 5 && zoom - up >= 0; up++)
+                {
+                    if (!Tiles.TryGetValue((zoom - up, x >> up, y >> up), out var parent) || parent is null) continue;
+                    double size = (double)TileSize / (1 << up);
+                    ctx.DrawImage(parent, new Rect((x - ((x >> up) << up)) * size, (y - ((y >> up) << up)) * size, size, size), dest);
+                    break;
+                }
+            }
         ctx.FillRectangle(Dim, new Rect(0, 0, w, h));
         _taken.Clear();
 

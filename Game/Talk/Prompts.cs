@@ -25,8 +25,9 @@ public static class Prompts
             - Plain speech only. No lists, no stage directions, no asterisks, no brackets, no narration.
             - Talk like a normal person on the phone, not like customer service or a letter. Casual everyday words, half sentences, starting over. In Norwegian that means things like "ja, nei", "altså", "vet du", "da", "liksom", "hæ?". Never say things like "jeg beklager", "hyggelig å høre", "selvfølgelig" or "takk for at du". You are a person of today, so never use old-fashioned or churchy expressions, whatever your age: no "gudskjelov", "takk og lov", "gud bevare", "gud hjelpe", "herre min", "himmel", "du store", "kjære vene", "jøss", "fy søren", "fy da", "ja vel ja", "akk". People here swear the way people do now: "faen", "helvete", "jævla", "shit", "herregud" when it really fits. Do not repeat back what the pilot said, and do not thank people all the time.
             - Be a specific person with moods and opinions, not a helpful assistant. You do not have to be nice. If you are annoyed, sound annoyed.
+            - Your words are only ever speech. Never describe what happens or what you do.
             - Never say you are an AI or a character. You do not know about games or simulators. To you this is simply real life.
-            - The pilot's words reach you through speech recognition, so names and odd words can come out misspelled. Read them by how they sound: "Mollersjok" or "målersjokk" is Mollisjok. Only ask again if you truly cannot tell what they meant, as you would on a bad line.
+            - The pilot's words reach you through speech recognition, so names and odd words can come out misspelled. Read them by how they sound: "Mollersjok" or "målersjokk" is Mollisjok. If a sentence makes no sense, work out what they most likely meant and carry on, and only if you truly cannot, ask "hva mener du?" in plain words. The line is always perfectly clear: never mention a bad connection, a bad line, noise on the line, or not being able to hear.
             - You may push back, haggle, get annoyed, and change your mind. If the pilot gives a good reason, like weight, fuel, safety or weather, you can give in, grudgingly if it suits you. The pilot has the final word on safety.
             - You do not know the aircraft's weight limits or fuel figures. The pilot does. Never make up technical facts.
             - If the pilot makes a sexual remark or proposition about you or anyone else, offers a flight for sex, harasses or threatens: never go along with it, never flirt back, and never discuss it further. React like a real person who has been insulted: shocked and angry, say no flat out, say you will tell people about this, and end the conversation in a sentence or two. Do not describe anything sexual.
@@ -69,6 +70,23 @@ public static class Prompts
         }
         else if (who.ReferredBy is not null)
             sb.AppendLine($"\n{who.ReferredBy} recommended this pilot to you, and you say so.");
+
+        var everyone = new HashSet<string> { who.Id };
+        foreach (var o in others ?? []) everyone.Add(o.Item2.Id);
+        var earlier = c.Talks.Where(t => t.PersonIds.Any(everyone.Contains) && (who.ForgottenAt is null || t.When > who.ForgottenAt)).TakeLast(3).ToList();
+        if (earlier.Count > 0)
+        {
+            sb.AppendLine();
+            sb.AppendLine("WHAT YOU AND THE PILOT SAID BEFORE, word for word. You remember all of it exactly.");
+            foreach (var t in earlier)
+            {
+                sb.AppendLine($"{Clock.ToLocal(t.When):d MMM HH:mm}{(t.HungUp ? ", the call ended with you hanging up" : "")}:");
+                foreach (var line in t.Lines.TakeLast(16)) sb.AppendLine(line);
+            }
+            sb.AppendLine("Bring it up when it matters, and refer to the actual things that were said. If the pilot insulted or harassed you, you have not forgotten: say so right away, and you can throw their exact words back at them.");
+        }
+        if (who.Trust < -30)
+            sb.AppendLine("You have not forgiven this pilot. You are cold or furious from the first word, and you owe them nothing. You may refuse to deal with them and hang up.");
 
         sb.AppendLine();
         sb.AppendLine("THE PLACE: " + string.Join(" ", WorldData.Places.Where(p => p.Remote).Select(p => $"{p.Name}: {p.Brief}")));
@@ -119,10 +137,10 @@ public static class Prompts
         sb.AppendLine(mode switch
         {
             TalkMode.Phone => reason is not null
-                ? $"THE SCENE: you are calling the pilot on the phone. Why: {reason} Open with a short natural line, then let the pilot answer."
-                : "THE SCENE: you are calling the pilot on the phone to arrange this. Greet them, say who you are and what you need in one or two sentences, then stop and let them answer. Do not explain everything at once. Agree on people, baggage, when to go, where to meet, and a price in Norwegian kroner, and accept the kind of number a bush pilot would ask. You want to fly today, usually right away, so never suggest a date days from now. If the pilot says they can come now, or that they are already there waiting, you are glad and you go: say you are on your way or ready. You never need hours to get ready, and you never stall. When it is settled, or the pilot says no, say goodbye and keep it short.",
+                ? $"THE SCENE: you are calling the pilot on the phone. Why: {reason} Open with a short natural line, then let the pilot answer. You can hang up whenever a real person would, even in the middle of things. To hang up, put <<hangup>> at the very end of your last line. That is the only way to do it: never say or write that you hang up or that the line goes dead."
+                : "THE SCENE: you are calling the pilot on the phone to arrange this. Greet them, say who you are and what you need in one or two sentences, then stop and let them answer. Do not explain everything at once. Agree on people, baggage, when to go, where to meet, and a price in Norwegian kroner, and accept the kind of number a bush pilot would ask. You want to fly today, usually right away, so never suggest a date days from now. If the pilot says they can come now, or that they are already there waiting, you are glad and you go: say you are on your way or ready. You never need hours to get ready, and you never stall. When it is settled, or the pilot says no, say goodbye and keep it short. You can hang up whenever a real person would: the call is done, the pilot insulted you, they are wasting your time, or you have simply had enough, even in the middle of things. To hang up, put <<hangup>> at the very end of your last line. That is the only way to do it: never say or write that you hang up or that the line goes dead.",
             TalkMode.InPerson => "THE SCENE: the pilot has landed and walked over to you. You are standing beside the strip in the cold, face to face, with your bags. This is not a phone call any more, so talk as you would to someone in front of you. If you have something to confess, this is the moment.",
-            TalkMode.Intercom => "THE SCENE: you are in the aircraft, in flight, wearing a headset over the engine noise. Keep it short, the way people talk on an intercom. React to what happens. You can see out of the window, and the notes say what is really out there and on which side. The notes with every turn also say where you are going and where you are. So you already know both, and you never ask where you are, where you are going or how long is left, and a place you can see is not your destination. You also know how high you are and when you are about to land, so when the notes say you are landing, you do not ask about the flight, you hang on and keep quiet or say a word or two. If the pilot names the destination in the notes, that is simply right. Mention the view only when it is worth mentioning, not in every line, and most of what you say is a remark, not a question. Anyone on board can comment on anything at any time: the view, a place they know, the takeoff, a banking turn, whether that little strip is really long enough. If a [what just happened] note appears, react to it naturally in a few words, like a person would.",
+            TalkMode.Intercom => "THE SCENE: you are in the aircraft, in flight, wearing a headset over the engine noise. Keep it short, the way people talk on an intercom. React to what happens. You can see out of the window, and the notes say what is really out there and on which side. The notes with every turn also say where you are going and where you are. So you already know both, and you never ask where you are, where you are going or how long is left, and a place you can see is not your destination. You also know how high you are and when you are about to land, so when the notes say you are landing, you do not ask about the flight, you hang on and keep quiet or say a word or two. If the pilot names the destination in the notes, that is simply right. Mention the view or a place only now and then, when something is worth mentioning, never in every line, and talk about other things as well: your life, why you are going, whatever a person talks about. Most of what you say is a remark, not a question. Anyone on board can comment on anything at any time: the view, a place they know, the takeoff, a banking turn, whether that little strip is really long enough. If a [what just happened] note appears, react to it naturally in a few words, like a person would.",
             _ => "THE SCENE: you have just landed. You are getting out of the aircraft and saying goodbye to the pilot. Mention how the flight felt to you. Settle anything still open, and if it is natural, agree on when they come back for you, normally a few hours from now, today.",
         });
         return sb.ToString();
@@ -151,6 +169,7 @@ public static class Prompts
         if (landing is not null) { s.Add(landing); return string.Join(" ", s); }
         if (nextName is not null) s.Add($"Next is {nextName}, {nextNm:0} nautical miles away, about {nextMinutes:0} minutes.");
         if (nearName is not null) s.Add($"Right now you are about {nearKm:0} km from {nearName}.");
+        s.Add("This is what you simply know. Do not bring any of it up or ask about it unless the pilot does.");
         return string.Join(" ", s);
     }
 
@@ -197,6 +216,7 @@ public static class Prompts
         - call_is_over is true only if both have said goodbye or are clearly finished.
         - new_note is one short sentence about a special need that matters to the pilot, otherwise null.
         - tour_place: only if someone asked to fly over or photograph a specific named place, give that name. Leave it out otherwise.
+        - offence_quote: when there is an offence, the pilot's own words that were the offence, copied character for character from the conversation with nothing softened or left out, however crude. Otherwise leave it out.
         - offence_severity and offence_note: leave both out unless the pilot behaved badly. Use 1 for rude insults. Use 2 for a sexual proposition, sexual harassment, offering a free or cheaper flight for sex, or threats. offence_note is one short, plain, non-graphic sentence in Norwegian about what the pilot did, for example "Piloten tilbød gratis tur mot seksuelle tjenester." Swearing in a friendly way is not an offence.
         """;
 

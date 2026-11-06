@@ -297,6 +297,12 @@
             <Border Grid.Column="1" Background="{StaticResource Panel}" BorderBrush="{StaticResource Line}" BorderThickness="1,0,0,0">
                 <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                     <StackPanel Spacing="16" Margin="18,16">
+                        <StackPanel Spacing="2">
+                            <TextBlock Classes="head" Text="{v:Tr 'The aircraft now'}" />
+                            <TextBlock Classes="big" Text="{Binding MapHeading}" />
+                            <TextBlock Text="{Binding MapAlt}" />
+                            <TextBlock Text="{Binding MapSpeed}" />
+                        </StackPanel>
                         <StackPanel Spacing="4" IsVisible="{Binding HasNav}">
                             <TextBlock Classes="head" Text="{v:Tr 'Where to fly now'}" />
                             <TextBlock Classes="big" Foreground="{StaticResource Signal}" Text="{Binding NavLine}" />
@@ -346,6 +352,12 @@
                         <Button Content="{v:Tr 'Not flown yet'}" Command="{Binding FilterNotFlown}" />
                     </StackPanel>
                 </Grid>
+                <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
+                    <Button Content="{v:Tr 'Make everyone forget me'}" Command="{Binding AskForgetAll}" IsVisible="{Binding NotAskingForgetAll}" />
+                    <TextBlock Foreground="{StaticResource Danger}" VerticalAlignment="Center" IsVisible="{Binding AskingForgetAll}" Text="{v:Tr 'Everyone forgets you: trust, memories and history. Your money and logbook stay.'}" />
+                    <Button Content="{v:Tr 'Yes, wipe everyone'}" Command="{Binding ConfirmForgetAll}" IsVisible="{Binding AskingForgetAll}" Background="{StaticResource Danger}" Foreground="{StaticResource SignalInk}" />
+                    <Button Content="{v:Tr 'No, keep them'}" Command="{Binding KeepPeople}" IsVisible="{Binding AskingForgetAll}" />
+                </StackPanel>
                 <TextBlock Classes="quiet" Text="{v:Tr 'Nobody yet. Everyone you talk to ends up here.'}" IsVisible="{Binding Pic.NoPeople, FallbackValue=False}" />
                 <ItemsControl ItemsSource="{Binding PeopleShown}">
                     <ItemsControl.ItemsPanel>
@@ -385,31 +397,97 @@
 
         <!-- Logbook -->
         <ScrollViewer Grid.Row="2" IsVisible="{Binding OnLogbook}" Padding="32,20">
-            <StackPanel Spacing="12" MaxWidth="820" HorizontalAlignment="Left">
-                <TextBlock Classes="title" Text="{v:Tr 'Logbook'}" />
-                <ItemsControl ItemsSource="{Binding Pic.Logbook}">
+            <StackPanel Spacing="16" MaxWidth="1040" HorizontalAlignment="Left">
+                <Grid ColumnDefinitions="*,Auto">
+                    <TextBlock Classes="title" Text="{v:Tr 'Logbook'}" />
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
+                        <Button Content="{v:Tr 'Flights'}" Command="{Binding LogFlights}" />
+                        <Button Content="{v:Tr 'Conversations'}" Command="{Binding LogTalks}" />
+                        <Button Content="{v:Tr 'Where you behaved badly'}" Command="{Binding LogOffences}" />
+                    </StackPanel>
+                </Grid>
+                <ItemsControl ItemsSource="{Binding Pic.LogStats}">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
                     <ItemsControl.ItemTemplate>
-                        <DataTemplate x:DataType="vm:LogRow">
-                            <Border BorderBrush="{StaticResource Line}" BorderThickness="0,0,0,1" Padding="0,10">
-                                <StackPanel Spacing="2">
-                                    <Grid ColumnDefinitions="*,Auto">
-                                        <TextBlock Classes="big" Text="{Binding Title}" />
-                                        <TextBlock Grid.Column="1" Classes="big" Text="{Binding Stars}" />
-                                    </Grid>
-                                    <TextBlock Classes="quiet">
-                                        <Run Text="{Binding When}" />
-                                        <Run Text="{v:Tr '  '}" />
-                                        <Run Text="{Binding Route}" />
-                                        <Run Text="{v:Tr '  '}" />
-                                        <Run Text="{Binding Money}" />
-                                    </TextBlock>
-                                    <TextBlock Classes="quiet" Text="{Binding Points}" />
-                                    <TextBlock FontStyle="Italic" Text="{Binding Quote}" />
-                                </StackPanel>
-                            </Border>
+                        <DataTemplate x:DataType="vm:StatRow">
+                            <StackPanel Width="165" Margin="0,0,0,6">
+                                <TextBlock Classes="big" FontSize="24" Text="{Binding Value}" />
+                                <TextBlock Classes="quiet" FontSize="12" Text="{Binding Label}" />
+                            </StackPanel>
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
+
+                <StackPanel Spacing="0" IsVisible="{Binding OnLogFlights}">
+                    <TextBlock Classes="quiet" Text="{v:Tr 'No finished flights yet.'}" IsVisible="{Binding Pic.NoFlights, FallbackValue=False}" />
+                    <ItemsControl ItemsSource="{Binding Pic.Logbook}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:LogRow">
+                                <Border BorderBrush="{StaticResource Line}" BorderThickness="0,0,0,1" Padding="0,12">
+                                    <Grid ColumnDefinitions="*,24,170">
+                                        <StackPanel Spacing="4">
+                                            <TextBlock Classes="big" Text="{Binding Title}" />
+                                            <TextBlock Classes="quiet" Text="{Binding When}" />
+                                            <TextBlock Text="{Binding Route}" />
+                                            <TextBlock FontStyle="Italic" Text="{Binding Quote}" Margin="0,4,0,0" />
+                                            <ItemsControl ItemsSource="{Binding Points}" Margin="0,4,0,0">
+                                                <ItemsControl.ItemTemplate>
+                                                    <DataTemplate x:DataType="x:String">
+                                                        <TextBlock Classes="quiet" FontSize="12" Text="{Binding}" />
+                                                    </DataTemplate>
+                                                </ItemsControl.ItemTemplate>
+                                            </ItemsControl>
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="2" HorizontalAlignment="Right" Spacing="2">
+                                            <TextBlock FontSize="20" Foreground="{StaticResource Signal}" TextAlignment="Right" Text="{Binding StarSigns}" />
+                                            <TextBlock Classes="quiet" TextAlignment="Right" Text="{Binding Stars}" />
+                                            <TextBlock Classes="big" TextAlignment="Right" Foreground="{Binding MoneyBrush}" Text="{Binding Money}" />
+                                        </StackPanel>
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+
+                <StackPanel Spacing="0" IsVisible="{Binding OnLogTalks}">
+                    <TextBlock Classes="quiet" Text="{v:Tr 'Every conversation ends up here, word for word.'}" IsVisible="{Binding Pic.NoTalks, FallbackValue=False}" />
+                    <ItemsControl ItemsSource="{Binding TalksShown}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:TalkRow">
+                                <Border BorderBrush="{StaticResource Line}" BorderThickness="0,0,0,1" Padding="0,8">
+                                    <StackPanel Spacing="6">
+                                        <ToggleButton x:Name="Open" Classes="row" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+                                            <Grid ColumnDefinitions="*,Auto">
+                                                <StackPanel Spacing="1">
+                                                    <TextBlock Classes="big" Text="{Binding Names}" />
+                                                    <TextBlock Classes="quiet" Text="{Binding What}" />
+                                                </StackPanel>
+                                                <StackPanel Grid.Column="1" Spacing="1">
+                                                    <TextBlock TextAlignment="Right" Text="{Binding When}" />
+                                                    <TextBlock TextAlignment="Right" Foreground="{Binding FlagBrush}" Text="{Binding Flag}" IsVisible="{Binding HasFlag}" />
+                                                    <TextBlock Classes="quiet" TextAlignment="Right" FontSize="12" Text="{Binding Count}" />
+                                                </StackPanel>
+                                            </Grid>
+                                        </ToggleButton>
+                                        <ItemsControl ItemsSource="{Binding Lines}" IsVisible="{Binding #Open.IsChecked}" Margin="12,0,0,6">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate x:DataType="vm:TalkLine">
+                                                    <Grid ColumnDefinitions="130,*" Margin="0,3">
+                                                        <TextBlock FontSize="12" Foreground="{Binding Brush}" Text="{Binding Who}" TextTrimming="CharacterEllipsis" />
+                                                        <TextBlock Grid.Column="1" TextWrapping="Wrap" Text="{Binding Text}" />
+                                                    </Grid>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </StackPanel>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
             </StackPanel>
         </ScrollViewer>
 
@@ -595,9 +673,18 @@
                         </StackPanel>
                     </ScrollViewer>
 
-                    <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
+                    <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right" IsVisible="{Binding NotAskingForget}">
+                        <Button Content="{v:Tr 'Delete'}" Command="{Binding AskDeletePerson}" />
+                        <Button Content="{v:Tr 'Make them forget me'}" Command="{Binding AskResetPerson}" />
                         <Button Classes="go" Content="{Binding SelectedPerson.CallLabel, FallbackValue=''}" Command="{Binding CallPerson}" CommandParameter="{Binding SelectedPerson.Id, FallbackValue=''}" />
                         <Button Content="{v:Tr 'Close'}" Command="{Binding ClosePerson}" />
+                    </StackPanel>
+                    <StackPanel Grid.Row="2" Spacing="8" HorizontalAlignment="Right" IsVisible="{Binding AskingForget}">
+                        <TextBlock Foreground="{StaticResource Danger}" Text="{Binding AskForgetText}" />
+                        <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
+                            <Button Content="{v:Tr 'Yes, do it'}" Command="{Binding ConfirmForget}" Background="{StaticResource Danger}" Foreground="{StaticResource SignalInk}" />
+                            <Button Content="{v:Tr 'No, keep them'}" Command="{Binding KeepPeople}" />
+                        </StackPanel>
                     </StackPanel>
                 </Grid>
             </Border>

@@ -21,6 +21,10 @@
     <Application.Styles>
         <FluentTheme />
 
+        <Style Selector="ToggleButton.row"><Setter Property="Background" Value="Transparent" /><Setter Property="Padding" Value="0,4" /></Style>
+        <Style Selector="ToggleButton.row /template/ ContentPresenter#PART_ContentPresenter"><Setter Property="Background" Value="Transparent" /></Style>
+        <Style Selector="ToggleButton.row:checked /template/ ContentPresenter#PART_ContentPresenter"><Setter Property="Background" Value="Transparent" /></Style>
+        <Style Selector="ToggleButton.row:pointerover /template/ ContentPresenter#PART_ContentPresenter"><Setter Property="Background" Value="#1A2C2A" /></Style>
         <Style Selector="Window">
             <Setter Property="FontFamily" Value="{StaticResource Din}" />
         </Style>

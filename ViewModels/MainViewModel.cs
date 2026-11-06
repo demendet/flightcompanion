@@ -87,6 +87,12 @@ public sealed class MainViewModel : INotifyPropertyChanged
     {
         MicLevel = _host.MicLevel;
         NavLine = _host.NavLine;
+        if (_host.Latest is { } live)
+        {
+            MapAlt = L.F("{0:0} ft, {1:0} ft over the ground", live.AltFt, live.AglFt);
+            MapSpeed = L.F("{0:0} kt, {1:+0;-0;0} ft/min", live.GroundSpeedKt, live.VerticalFpm);
+            MapHeading = L.F("Course {0:000}", ((live.HeadingTrue - live.MagVarDeg) % 360 + 360) % 360);
+        }
         WhenSoon = Pic.Card?.PickupAt is { } due ? UntilPickup((due - DateTimeOffset.Now).TotalMinutes) : "";
         ReachLine = _host.ReachLine;
         if (!ReferenceEquals(_plane, _host.PlanePosition)) { _plane = _host.PlanePosition; Raise(nameof(Plane)); }
@@ -123,6 +129,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
             _pic = value;
             Raise();
             Raise(nameof(PeopleShown));
+            Raise(nameof(TalksShown));
             Raise(nameof(SelectedPerson));
             Raise(nameof(HasSelectedPerson));
         }
@@ -148,7 +155,33 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public ICommand FilterWary => new RelayCommand(() => Filter(2));
     public ICommand FilterNotFlown => new RelayCommand(() => Filter(3));
     public ICommand OpenPerson => new RelayCommand<string>(id => { _selectedPersonId = id; Raise(nameof(SelectedPerson)); Raise(nameof(HasSelectedPerson)); });
-    public ICommand ClosePerson => new RelayCommand(() => { _selectedPersonId = null; Raise(nameof(SelectedPerson)); Raise(nameof(HasSelectedPerson)); });
+    public ICommand ClosePerson => new RelayCommand(() => { _selectedPersonId = null; AskForget = ""; Raise(nameof(SelectedPerson)); Raise(nameof(HasSelectedPerson)); });
+
+    // Forgetting cannot be undone, so every way of doing it asks once.
+    private string _askForget = "";
+    private string AskForget { get => _askForget; set { _askForget = value; Raise(nameof(AskingForget)); Raise(nameof(NotAskingForget)); Raise(nameof(AskForgetText)); Raise(nameof(AskingForgetAll)); Raise(nameof(NotAskingForgetAll)); } }
+    public bool AskingForget => _askForget is "reset" or "delete";
+    public bool NotAskingForget => !AskingForget;
+    public bool AskingForgetAll => _askForget == "all";
+    public bool NotAskingForgetAll => !AskingForgetAll;
+    public string AskForgetText => _askForget == "delete"
+        ? L.T("Delete this person for good? Anything booked with them is called off.")
+        : L.T("Make them forget you? Trust, memories and history with them are wiped.");
+    public ICommand AskResetPerson => new RelayCommand(() => AskForget = "reset");
+    public ICommand AskDeletePerson => new RelayCommand(() => AskForget = "delete");
+    public ICommand AskForgetAll => new RelayCommand(() => AskForget = "all");
+    public ICommand KeepPeople => new RelayCommand(() => AskForget = "");
+    public ICommand ConfirmForget => new RelayCommand(() =>
+    {
+        if (_selectedPersonId is { } id)
+        {
+            bool delete = _askForget == "delete";
+            _host.ForgetPerson(id, delete);
+            if (delete) { _selectedPersonId = null; Raise(nameof(SelectedPerson)); Raise(nameof(HasSelectedPerson)); }
+        }
+        AskForget = "";
+    });
+    public ICommand ConfirmForgetAll => new RelayCommand(() => { _selectedPersonId = null; AskForget = ""; Raise(nameof(SelectedPerson)); Raise(nameof(HasSelectedPerson)); _host.ForgetEveryone(); });
     public ICommand CallPerson => new RelayCommand<string>(id => { _selectedPersonId = null; Raise(nameof(SelectedPerson)); Raise(nameof(HasSelectedPerson)); Go(Page.Board); _host.CallPersonById(id); });
 
     /// <summary>Layout preview only.</summary>
@@ -230,6 +263,36 @@ public sealed class MainViewModel : INotifyPropertyChanged
     /// <summary>Layout preview only.</summary>
     public void PreviewMap() { Go(Page.Map); RefreshNow(); }
     public void PreviewPlane(PlanePos p) { _plane = p; Raise(nameof(Plane)); }
+    private string _mapAlt = "", _mapSpeed = "", _mapHeading = "";
+    public string MapAlt { get => _mapAlt; private set { if (_mapAlt != value) { _mapAlt = value; Raise(); } } }
+    public string MapSpeed { get => _mapSpeed; private set { if (_mapSpeed != value) { _mapSpeed = value; Raise(); } } }
+    public string MapHeading { get => _mapHeading; private set { if (_mapHeading != value) { _mapHeading = value; Raise(); } } }
+
+    // Logbook tabs
+    private int _logTab;
+    public bool OnLogFlights => _logTab == 0;
+    public bool OnLogTalks => _logTab > 0;
+    private void LogTab(int tab) { _logTab = tab; _talksShown = null; Raise(nameof(OnLogFlights)); Raise(nameof(OnLogTalks)); Raise(nameof(TalksShown)); }
+    public ICommand LogFlights => new RelayCommand(() => LogTab(0));
+    public ICommand LogTalks => new RelayCommand(() => LogTab(1));
+    public ICommand LogOffences => new RelayCommand(() => LogTab(2));
+    /// <summary>Kept as the same list until something new comes in, or every opened conversation would snap shut on each update.</summary>
+    private System.Collections.Generic.IReadOnlyList<TalkRow>? _talksShown, _talksFrom;
+    public System.Collections.Generic.IReadOnlyList<TalkRow> TalksShown
+    {
+        get
+        {
+            var all = _pic?.Talks ?? [];
+            if (_talksShown is null || !ReferenceEquals(_talksFrom, all))
+            {
+                _talksFrom = all;
+                _talksShown = _logTab == 2 ? all.Where(x => x.Offence).ToList() : all;
+            }
+            return _talksShown;
+        }
+    }
+    /// <summary>Layout preview only.</summary>
+    public void PreviewLog(int tab) { Go(Page.Logbook); LogTab(tab); RefreshNow(); }
     private string _whenSoon = "";
     public string WhenSoon { get => _whenSoon; private set { if (_whenSoon != value) { _whenSoon = value; Raise(); } } }
     private static string UntilPickup(double minutes) => minutes switch

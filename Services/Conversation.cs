@@ -61,9 +61,23 @@ public sealed class Conversation : IDisposable
     public IReadOnlyList<CastMember> Cast => _cast;
     private bool Group => _cast.Count > 1;
     public IReadOnlyList<Turn> History { get { lock (_lock) return _history.ToList(); } }
+    /// <summary>What was really said aloud, by both sides, without the notes the model gets with each turn.</summary>
+    private readonly List<(bool Pilot, string Text)> _said = [];
     public IEnumerable<string> TranscriptLines(string pilotName)
     {
-        lock (_lock) return _history.Where(t => !t.Text.StartsWith('[')).Select(t => (t.FromPilot ? $"{pilotName}: " : Group ? "" : $"{_lead.Person.Name}: ") + t.Text).ToList();
+        lock (_lock) return _said.Select(t => (t.Pilot ? $"{pilotName}: " : Group ? "" : $"{_lead.Person.Name}: ") + t.Text).ToList();
+    }
+    public string? LastPilotWords { get { lock (_lock) return _said.LastOrDefault(t => t.Pilot).Text; } }
+    /// <summary>They ended the call themselves.</summary>
+    public event Action? HungUp;
+    public bool HungUpOnPilot { get; private set; }
+    private volatile bool _hanging;
+
+    private string Speakable(string s)
+    {
+        var (text, hang) = SpeechText.TakeHangup(s);
+        if (hang) _hanging = true;
+        return SpeechText.Clean(text);
     }
     public bool IsSpeaking => _channel.IsPlaying;
 
@@ -203,7 +217,11 @@ public sealed class Conversation : IDisposable
             // The cancelled turn writes down what was heard first, so the history stays in order and always ends on
             // the newest thing said to them. The API refuses a history that ends on their own words.
             await previous.ConfigureAwait(false);
-            lock (_lock) _history.Add(new Turn(true, userContent));
+            lock (_lock)
+            {
+                _history.Add(new Turn(true, userContent));
+                if (pilotText is not null) _said.Add((true, pilotText));
+            }
             if (!cts.IsCancellationRequested) await RunTurnAsync(cts.Token).ConfigureAwait(false);
         });
     }
@@ -276,7 +294,7 @@ public sealed class Conversation : IDisposable
                 whole.Append(delta);
                 foreach (var (who, s) in splitter.Push(delta))
                 {
-                    string clean = SpeechText.Clean(s);
+                    string clean = Speakable(s);
                     if (clean.Length > 0) await sentences.Writer.WriteAsync((ByLabel(who), clean), ct);
                 }
             }
@@ -307,11 +325,20 @@ public sealed class Conversation : IDisposable
         lock (_lock)
         {
             // An empty assistant turn would be rejected on the next request, and nothing was said anyway.
-            if (heard.Length > 0) _history.Add(new Turn(false, heard));
+            if (heard.Length > 0)
+            {
+                _history.Add(new Turn(false, heard));
+                _said.Add((false, heard));
+            }
         }
         Log.Info("Talk", Group ? heard.Replace("\n", " / ") : $"{_lead.Person.Name}: {heard}");
         if (!ct.IsCancellationRequested) ExchangeDone?.Invoke();
         else if (heard.Length > 0) ExchangeDone?.Invoke();
+        if (_hanging && !HungUpOnPilot)
+        {
+            HungUpOnPilot = true;
+            HungUp?.Invoke();
+        }
     }
 
     /// <summary>In a group the history keeps the names, so everyone remembers who said what.</summary>

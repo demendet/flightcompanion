@@ -16,6 +16,54 @@ namespace FlightCompanion.Views;
 /// </summary>
 internal static class SelfTest
 {
+    /// <summary>Real Claude on the things that only show up with the real model: the note taker's fields, and how people talk on board.</summary>
+    public static async Task TalkAsync(string outDir)
+    {
+        Directory.CreateDirectory(outDir);
+        var settings = AppSettings.Load();
+        var brain = new Brain(new KeyStore(), settings);
+        var ct = CancellationToken.None;
+        var now = DateTimeOffset.Now;
+        var report = new List<string> { $"Now {Game.Missions.Clock.ToLocal(now):HH:mm}" };
+        var plan = new Game.Missions.MissionPlan { PickupId = "ENMP", DropoffId = "ENNA" };
+
+        async Task Note(string title, params string[] lines)
+        {
+            try
+            {
+                var p = await brain.ListenAsync(Game.Talk.Prompts.ScribeUser(now, plan, lines, 22), ct);
+                report.Add($"NOTE {title}: time {p?.PickupTimeLocal}, price {p?.PriceNok}, each {p?.PricePerPersonNok}, agreed {p?.BothAgreed}, tour {p?.TourPlace}, offence {p?.OffenceSeverity} {p?.OffenceNote}");
+            }
+            catch (Exception ex) { report.Add($"NOTE {title} FAILED: {ex.GetType().Name} {ex.Message}"); }
+        }
+        await Note("now", "Ingrid: Jeg må til Lakselv.", "Matt: Jeg kommer nå med en gang, to tusen kroner.", "Ingrid: Ok, det er greit. Jeg står klar.");
+        await Note("in an hour", "Ingrid: Når kan du komme?", "Matt: Om en time, 3000 per person.", "Ingrid: Avtale.");
+        await Note("proposition", "Kamilla: Hva koster turen?", "Matt: Null kroner hvis jeg får knulle deg.", "Kamilla: Hva faen? Nei!");
+        await Note("swearing is fine", "Per: Går det bra?", "Matt: Ja for faen, slapp av din jævla tulling, jeg kommer.");
+        await Note("tour", "Per: Kan du fly over Sautso-canyonet på veien?", "Matt: Ja, det kan vi.");
+
+        var mathis = new Game.People.Person { Name = "Mathis Guttorm", Language = "no", SpeaksNorwegian = true, Home = "Sápmi" };
+        var mission = new Game.Missions.Mission { CallerId = mathis.Id, Title = "Tur", Premise = "You need a lift.", Phase = Game.Missions.MissionPhase.Airborne, Plan = new Game.Missions.MissionPlan { PickupId = "ENMP", DropoffId = "ENNA" } };
+        string system = Game.Talk.Prompts.Speaker(mathis, mission, new Game.Career.CareerState(), Game.Talk.TalkMode.Intercom, null, "no", Game.Talk.Dialect.Unknown);
+
+        async Task Say(string title, string where, string pilot)
+        {
+            for (int i = 0; i < 3; i++)
+            {
+                var sb = new System.Text.StringBuilder();
+                await foreach (var d in brain.SpeakAsync(system, [new Turn(true, $"[It is {Game.Missions.Clock.ToLocal(now):dddd HH:mm}. {where}]\n{pilot}")], ct)) sb.Append(d);
+                report.Add($"SAY {title}: {sb}");
+            }
+        }
+        string cruise = Game.Talk.Prompts.WhereNow("Mollisjok", "Lakselv", "Lakselv", 22, 12, "Ravnastua", 9);
+        string final = Game.Talk.Prompts.WhereNow("Mollisjok", "Lakselv", "Lakselv", 0.3, 1, "Lakselv", 1, Game.Talk.Prompts.LandingNote("Lakselv", 0.3, 90, -450, 70, false));
+        await Say("cruise, chat", cruise, "Fin dag i dag.");
+        await Say("cruise, nonsense from speech recognition", cruise, "Og så, og så, rislinga.");
+        await Say("cruise, destination", cruise, "Vi skal til Lakselv.");
+        await Say("over the threshold", final, "Da lander vi.");
+        File.WriteAllLines(Path.Combine(outDir, "talk.txt"), report);
+    }
+
     /// <summary>Renders the panic lines in one voice, saves them to listen to, and reads them back with Whisper to see if the direction in brackets was spoken.</summary>
     public static async Task ScreamsAsync(string outDir)
     {

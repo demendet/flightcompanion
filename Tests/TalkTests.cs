@@ -191,6 +191,28 @@ public class DialectTests
     public void Quick_reactions_follow_the_dialect(string line, Dialect d, string want) => Assert.Equal(want, Dialects.Adapt(line, d));
 }
 
+public class HangUpTests
+{
+    [Theory]
+    [InlineData("INGRID HANGS UP. LINE GOES DEAD.", "", true)]
+    [InlineData("Ingrid hangs up", "", true)]
+    [InlineData("Ingrid legger på.", "", true)]
+    [InlineData("Linja går død.", "", false)]
+    [InlineData("Ha det. <<hangup>>", "Ha det.", true)]
+    [InlineData("Ikke ring meg igjen. [hangup]", "Ikke ring meg igjen.", true)]
+    [InlineData("Nå legger jeg på, din tulling.", "Nå legger jeg på, din tulling.", true)]
+    [InlineData("Ja, det går bra, jeg står klar.", "Ja, det går bra, jeg står klar.", false)]
+    [InlineData("Vi ses på stripa.", "Vi ses på stripa.", false)]
+    [InlineData("Jeg legger på fem hundre kroner, jeg.", "Jeg legger på fem hundre kroner, jeg.", false)]
+    [InlineData("Du legger på bagasjen selv.", "Du legger på bagasjen selv.", false)]
+    public void Hanging_up_is_an_action_and_narration_is_never_read_aloud(string said, string text, bool hang)
+    {
+        var (t, h) = SpeechText.TakeHangup(said);
+        Assert.Equal(text, t);
+        Assert.Equal(hang, h);
+    }
+}
+
 public class NameFixerTests
 {
     private static readonly NameFixer Fixer = new(["Mollisjok", "Karasjok", "Honningsvåg", "Lakselv", "Kirkenes", "Alta", "Hammerfest", "Mollisjok lodge", "the Sautso canyon", "Kamilla Hansen", "Per Olsen"]);

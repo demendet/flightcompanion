@@ -96,6 +96,8 @@ internal static class LayoutPreview
         c.Missions.Add(m);
         var other = new Mission { Title = "Reintelling", CallerId = klaus.Id, Phase = MissionPhase.Booked, CreatedAt = now, Plan = new MissionPlan { PickupId = "ENRA", DropoffId = "ENRA", PickupTime = now.AddDays(2).Date.AddHours(10), PriceNok = 4200 } };
         c.Missions.Add(other);
+        c.Talks.Add(new TalkRecord { When = now.AddHours(-1), Mode = "Phone", Names = ["Ingrid Somby"], PersonIds = [], MissionTitle = "Til flyet", Offence = 2, HungUp = true, Lines = ["Matt: Hei, kan du komme nå?", "Ingrid Somby: Ja, jeg står klar.", "Matt: En stygg kommentar.", "Ingrid Somby: Hva faen sa du?"] });
+        c.Talks.Add(new TalkRecord { When = now.AddHours(-3), Mode = "Intercom", Names = ["Klaus Reinhardt", "Uwe Krause"], PersonIds = [], MissionTitle = "Laksefellesskapet", Lines = ["Matt: Da lander vi.", "Klaus: Fin tur."] });
         for (int i = 0; i < 14; i++) c.Inbox.Add(new SmsMessage(now.AddHours(-2 - i), "Ingrid Somby", "Planken kom hel fram. Du skylder meg en kaffe."));
         return c;
     }
@@ -144,6 +146,14 @@ internal static class LayoutPreview
             AvaloniaHeadlessPlatform.ForceRenderTimerTick();
             Dispatcher.UIThread.RunJobs();
             w.CaptureRenderedFrame()?.Save(Path.Combine(dir, "map.png"));
+            foreach (var (tab, file) in new[] { (0, "logflights.png"), (1, "logtalks.png") })
+            {
+                vm.PreviewLog(tab);
+                Dispatcher.UIThread.RunJobs();
+                AvaloniaHeadlessPlatform.ForceRenderTimerTick();
+                Dispatcher.UIThread.RunJobs();
+                w.CaptureRenderedFrame()?.Save(Path.Combine(dir, file));
+            }
         }
         w.Close();
         host.Dispose();

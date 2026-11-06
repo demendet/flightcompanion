@@ -483,6 +483,12 @@ public sealed class GameHost : IDisposable
         talk.PersonSaid += (name, s) => Post(() => AddChat(name, s, false));
         talk.PilotSaid += s => Post(() => { _partial = ""; AddChat(Career.PilotName, s, true); });
         talk.ExchangeDone += () => Post(() => OnExchangeDone(talk));
+        talk.HungUp += () => Post(() =>
+        {
+            if (_talk != talk || _talkMode != TalkMode.Phone) return;
+            _endCallSoon = true;
+            Log.Info("Talk", $"{talk.Person.Name} hung up");
+        });
         talk.AiHealth += h => Post(() => { AiHealth = h; Changed?.Invoke(); });
         talk.VoiceHealth += h => Post(() => { VoiceHealth = h; Changed?.Invoke(); });
         talk.Timing += t => Post(() => { LastTiming = t; Changed?.Invoke(); });
@@ -679,6 +685,10 @@ public sealed class GameHost : IDisposable
         _offenceThisTalk = severity;
         var present = _talk?.Cast.Select(c => c.Person).ToList() ?? [];
         string what = string.IsNullOrWhiteSpace(p.OffenceNote) ? L.T("You behaved badly towards them") : p.OffenceNote!;
+        // The pilot's own words. The note taker's quote only counts if it is really in the conversation, or it would be made up.
+        string? said = _talk?.TranscriptLines(Career.PilotName).Where(l => l.StartsWith(Career.PilotName + ":")).ToList() is { Count: > 0 } lines
+            && !string.IsNullOrWhiteSpace(p.OffenceQuote) && lines.Any(l => l.Contains(p.OffenceQuote!, StringComparison.OrdinalIgnoreCase)) ? p.OffenceQuote : _talk?.LastPilotWords;
+        if (!string.IsNullOrWhiteSpace(said)) what += " " + L.F("The pilot said: \"{0}\"", said!.Trim());
         Offences.Apply(Career, m, present, what, severity, DateTimeOffset.Now);
         Log.Info("Game", $"Offence, severity {severity}: {what}");
         if (severity >= 2)
@@ -801,8 +811,22 @@ public sealed class GameHost : IDisposable
         return Math.Round(Math.Max(tpl?.MinimumNok ?? 2500, fuel.TripHours * (tpl?.PricePerHourNok ?? 5200)) / 100) * 100;
     }
 
+    private void ArchiveTalk()
+    {
+        if (_talk is not { } talk) return;
+        var lines = talk.TranscriptLines(Career.PilotName).ToList();
+        if (lines.Count == 0) return;
+        Career.Talks.Add(new TalkRecord
+        {
+            When = DateTimeOffset.Now, Mode = _talkMode.ToString(), MissionTitle = _talkMission?.Title, Lines = lines, HungUp = talk.HungUpOnPilot, Offence = _offenceThisTalk,
+            PersonIds = talk.Cast.Select(c => c.Person.Id).ToList(), Names = talk.Cast.Select(c => c.Person.Name).ToList(),
+        });
+        if (Career.Talks.Count > 500) Career.Talks.RemoveRange(0, Career.Talks.Count - 500);
+    }
+
     private void CloseTalkObject()
     {
+        ArchiveTalk();
         _scribeCts?.Cancel();
         _talk?.Dispose();
         _talk = null;
@@ -832,6 +856,26 @@ public sealed class GameHost : IDisposable
         var when = TripTiming.Move(m, Career, wanted, earliest, now);
         _ = RefreshForecast(m);
         Toast?.Invoke(L.F("Moved: {0}, {1} at {2}", m.Title, m.Pickup?.Name, Clock.ToLocal(when).ToString("HH:mm")));
+        Save();
+        Changed?.Invoke();
+    });
+
+    public void ForgetPerson(string id, bool delete) => Post(() =>
+    {
+        if (Career.PersonById(id) is not { } p) return;
+        if (Forgetting.InUse(Career, p)) { Toast?.Invoke(L.F("{0} is in the middle of something with you right now", p.Name)); return; }
+        var now = DateTimeOffset.Now;
+        if (delete) Forgetting.Delete(Career, p);
+        else Forgetting.Reset(p, now);
+        Toast?.Invoke(L.F(delete ? "{0} is deleted" : "{0} no longer remembers you", p.Name));
+        Save();
+        Changed?.Invoke();
+    });
+
+    public void ForgetEveryone() => Post(() =>
+    {
+        int n = Forgetting.ResetEveryone(Career, DateTimeOffset.Now);
+        Toast?.Invoke(L.F("{0} people no longer remember you", n));
         Save();
         Changed?.Invoke();
     });
@@ -1051,7 +1095,7 @@ public sealed class GameHost : IDisposable
 
     private void UpdateNav(Telemetry t, DateTimeOffset now)
     {
-        if ((now - _lastNav).TotalSeconds < 0.5) return;
+        if ((now - _lastNav).TotalSeconds < 0.2) return;
         _lastNav = now;
         var a = CurrentAircraft();
         var focus = ActiveMission ?? Career.MissionById(SelectedMissionId) ?? Career.OpenMissions.OrderBy(m => m.Plan.PickupTime ?? DateTimeOffset.MaxValue).FirstOrDefault();

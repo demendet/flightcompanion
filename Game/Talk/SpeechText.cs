@@ -60,6 +60,32 @@ public static partial class SpeechText
     private static partial Regex Spaces();
 
     /// <summary>Removes stage directions and markup a model may slip in, since a voice would read them aloud.</summary>
+    /// <summary>
+    /// The character hangs up by ending a line with a token. If the model narrates it instead ("Ingrid hangs up, the line goes
+    /// dead"), that must never be read aloud, and it counts too. "Nå legger jeg på" is real speech, so it is kept, and it counts.
+    /// </summary>
+    public static (string Text, bool HangUp) TakeHangup(string s)
+    {
+        bool token = HangToken().IsMatch(s);
+        string text = HangToken().Replace(s, " ").Trim();
+        bool hangWords = HangWords().IsMatch(text);
+        bool firstPerson = Speaker().IsMatch(text);
+        if ((hangWords || LineWords().IsMatch(text)) && !firstPerson) return ("", token || hangWords);
+        return (text, token || hangWords);
+    }
+
+    [GeneratedRegex(@"(<<|\[)\s*hang\s*-?\s*up\s*(>>|\])", RegexOptions.IgnoreCase)]
+    private static partial Regex HangToken();
+
+    [GeneratedRegex(@"\b(hangs? up|hung up|hanging up|ends the call)\b|\b(legger|la)\s+(jeg\s+|æ\s+|eg\s+)?på(?=\s*($|[.!,]))", RegexOptions.IgnoreCase)]
+    private static partial Regex HangWords();
+
+    [GeneratedRegex(@"\b(line (goes|went) dead|the line|call ends|linja|linjen|røret|dødt? i)\b", RegexOptions.IgnoreCase)]
+    private static partial Regex LineWords();
+
+    [GeneratedRegex(@"\b(jeg|æ|eg|je|du|dæ|vi|dere)\b", RegexOptions.IgnoreCase)]
+    private static partial Regex Speaker();
+
     public static string Clean(string s) => Spaces().Replace(Stage().Replace(s, " "), " ").Trim();
 
     /// <summary>The share of a sentence a listener heard before being cut off, rounded to whole words.</summary>

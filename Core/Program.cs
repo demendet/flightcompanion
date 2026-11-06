@@ -31,6 +31,12 @@ internal static class Program
                 added.Concat(after.Select(v => $"HAS {v.Name} | {v.Gender} | {v.Accent} | {v.Language} | {v.Category}")));
             return;
         }
+        if (args.Length == 2 && args[0] == "--test-talk")
+        {
+            AttachConsole(-1);
+            Views.SelfTest.TalkAsync(args[1]).GetAwaiter().GetResult();
+            return;
+        }
         if (args.Length == 2 && args[0] == "--test-screams")
         {
             AttachConsole(-1);

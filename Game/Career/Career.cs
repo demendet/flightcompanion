@@ -10,6 +10,19 @@ public sealed record LedgerEntry(DateTimeOffset When, string Text, double Amount
 
 public sealed record SmsMessage(DateTimeOffset When, string From, string Text);
 
+/// <summary>One whole conversation, word for word. People remember these, and the logbook shows them.</summary>
+public sealed class TalkRecord
+{
+    public DateTimeOffset When { get; set; }
+    public string Mode { get; set; } = "";
+    public List<string> PersonIds { get; set; } = [];
+    public List<string> Names { get; set; } = [];
+    public string? MissionTitle { get; set; }
+    public List<string> Lines { get; set; } = [];
+    public bool HungUp { get; set; }
+    public int Offence { get; set; }
+}
+
 public sealed record PendingCall(DateTimeOffset Due, string PersonId, string Reason, string? MissionId = null);
 
 public sealed class CareerState
@@ -33,6 +46,7 @@ public sealed class CareerState
     public List<LedgerEntry> Ledger { get; set; } = [];
     public List<SmsMessage> Inbox { get; set; } = [];
     public List<PendingCall> PendingCalls { get; set; } = [];
+    public List<TalkRecord> Talks { get; set; } = [];
     /// <summary>Gallons of your own fuel cached in sheds, by place. This is how you stretch your range out on the vidda.</summary>
     public Dictionary<string, double> FuelCache { get; set; } = new() { ["ENMP"] = 20 };
     public Dictionary<string, int> ArcProgress { get; set; } = [];
@@ -169,6 +183,50 @@ public static class Offences
             other.Note(now, L.T("Heard how you treated a customer"), -4);
         if (present.Count > 0)
             c.Inbox.Add(new SmsMessage(now, present[0].Name, L.T("Never contact me again. I am telling people what you said.")));
+    }
+}
+
+/// <summary>Wipes people from the player's history, one at a time or everyone. Your own money, logbook and reputation stay as they are.</summary>
+public static class Forgetting
+{
+    /// <summary>Someone in the middle of a talk or on board cannot vanish.</summary>
+    public static bool InUse(CareerState c, Person p) => c.Missions.Any(m =>
+        m.Phase is MissionPhase.Negotiating or MissionPhase.AtPickup or MissionPhase.Boarding or MissionPhase.Loaded or MissionPhase.Airborne or MissionPhase.Landed
+        && (m.CallerId == p.Id || m.CompanionIds.Contains(p.Id)));
+
+    /// <summary>They stay in the world, but as if you had never met.</summary>
+    public static void Reset(Person p, DateTimeOffset now)
+    {
+        p.Trust = 0;
+        p.FlightsWithYou = 0;
+        p.Talks = 0;
+        p.ReferredBy = null;
+        p.LastContact = null;
+        p.Memories.Clear();
+        p.Record.Clear();
+        p.ForgottenAt = now;
+    }
+
+    /// <summary>Gone for good. Anything booked with them is called off, at no cost to you.</summary>
+    public static void Delete(CareerState c, Person p)
+    {
+        foreach (var m in c.Missions.Where(m => m.Phase == MissionPhase.Booked && (m.CallerId == p.Id || m.CompanionIds.Contains(p.Id))))
+            m.Phase = MissionPhase.Cancelled;
+        c.PendingCalls.RemoveAll(x => x.PersonId == p.Id);
+        c.Talks.RemoveAll(t => t.PersonIds.Contains(p.Id));
+        if (c.FavoriteCallerId == p.Id) c.FavoriteCallerId = null;
+        c.People.Remove(p);
+    }
+
+    public static int ResetEveryone(CareerState c, DateTimeOffset now)
+    {
+        int n = 0;
+        foreach (var p in c.People.Where(p => !InUse(c, p) && (p.Talks > 0 || p.FlightsWithYou > 0 || p.Memories.Count > 0 || p.Record.Count > 0)))
+        {
+            Reset(p, now);
+            n++;
+        }
+        return n;
     }
 }
 

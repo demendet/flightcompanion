@@ -53,6 +53,8 @@ public sealed class Person
         Record.Add(new StandingEvent(when, text, trustChange, serious));
     }
     public DateTimeOffset? LastContact { get; set; }
+    /// <summary>Everything before this is forgotten: flights before it no longer show on their page.</summary>
+    public DateTimeOffset? ForgottenAt { get; set; }
 
     public string DescribeForPrompt()
     {

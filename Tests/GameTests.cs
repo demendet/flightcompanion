@@ -387,6 +387,109 @@ public class CareerTests
     }
 }
 
+public class TalkMemoryTests
+{
+    [Fact]
+    public void People_remember_earlier_talks_word_for_word_until_they_are_made_to_forget()
+    {
+        var p = new Person { Name = "Ingrid Somby", Language = "no" };
+        var c = new CareerState();
+        c.People.Add(p);
+        c.Talks.Add(new TalkRecord { When = DateTimeOffset.Now.AddHours(-1), PersonIds = [p.Id], Lines = ["Matt: Du er en idiot.", "Ingrid Somby: Hva sa du?"], HungUp = true });
+        string prompt = Prompts.Speaker(p, null, c, TalkMode.Phone, null, "no");
+        Assert.Contains("Matt: Du er en idiot.", prompt);
+        Assert.Contains("hanging up", prompt);
+        Forgetting.Reset(p, DateTimeOffset.Now);
+        Assert.DoesNotContain("Matt: Du er en idiot.", Prompts.Speaker(p, null, c, TalkMode.Phone, null, "no"));
+    }
+
+    [Fact]
+    public void Someone_you_wronged_starts_the_call_furious()
+    {
+        var p = new Person { Name = "A B", Language = "no", Trust = -50 };
+        Assert.Contains("have not forgiven", Prompts.Speaker(p, null, new CareerState(), TalkMode.Phone, null, "no"));
+    }
+
+    [Fact]
+    public void Offences_keep_the_exact_words_in_the_record_and_the_memory()
+    {
+        var p = new Person { Name = "A B" };
+        var c = new CareerState { Reputation = 50 };
+        c.People.Add(p);
+        string what = "Note. " + FlightCompanion.Game.L.F("The pilot said: \"{0}\"", "akkurat disse ordene");
+        Offences.Apply(c, null, [p], what, 2, DateTimeOffset.Now);
+        Assert.Contains("akkurat disse ordene", p.Record[^1].Text);
+        Assert.Contains("akkurat disse ordene", p.Memories[^1].Text);
+    }
+}
+
+public class ForgettingTests
+{
+    private static readonly DateTimeOffset T0 = new(2026, 11, 6, 12, 0, 0, TimeSpan.Zero);
+
+    private static (CareerState C, Person P, Mission M) World(MissionPhase phase)
+    {
+        var p = new Person { Name = "A B", Trust = -50, Talks = 4, FlightsWithYou = 2, ReferredBy = "C" };
+        p.Memories.Add(new MemoryNote(T0, "x"));
+        p.Note(T0, "y", -5);
+        var m = new Mission { CallerId = p.Id, Phase = phase };
+        var c = new CareerState { FavoriteCallerId = p.Id, Reputation = 40 };
+        c.People.Add(p);
+        c.Missions.Add(m);
+        c.PendingCalls.Add(new PendingCall(T0, p.Id, "z"));
+        return (c, p, m);
+    }
+
+    [Fact]
+    public void Reset_wipes_the_history_but_keeps_the_person()
+    {
+        var (c, p, _) = World(MissionPhase.Complete);
+        Forgetting.Reset(p, T0);
+        Assert.Contains(p, c.People);
+        Assert.Equal(0, p.Trust);
+        Assert.Equal(0, p.Talks);
+        Assert.Equal(0, p.FlightsWithYou);
+        Assert.Empty(p.Memories);
+        Assert.Empty(p.Record);
+        Assert.Null(p.LastContact);
+        Assert.Equal(40, c.Reputation);
+    }
+
+    [Fact]
+    public void Delete_removes_them_and_calls_off_what_is_booked()
+    {
+        var (c, p, m) = World(MissionPhase.Booked);
+        Forgetting.Delete(c, p);
+        Assert.DoesNotContain(p, c.People);
+        Assert.Equal(MissionPhase.Cancelled, m.Phase);
+        Assert.Empty(c.PendingCalls);
+        Assert.Null(c.FavoriteCallerId);
+        Assert.Equal(40, c.Reputation);
+    }
+
+    [Theory]
+    [InlineData(MissionPhase.Airborne, true)]
+    [InlineData(MissionPhase.Boarding, true)]
+    [InlineData(MissionPhase.Booked, false)]
+    [InlineData(MissionPhase.Complete, false)]
+    public void Nobody_on_board_can_vanish(MissionPhase phase, bool inUse)
+    {
+        var (c, p, _) = World(phase);
+        Assert.Equal(inUse, Forgetting.InUse(c, p));
+    }
+
+    [Fact]
+    public void Reset_everyone_skips_whoever_is_on_board()
+    {
+        var (c, p, _) = World(MissionPhase.Airborne);
+        var other = new Person { Name = "D E", Talks = 2, Trust = 30 };
+        c.People.Add(other);
+        Assert.Equal(1, Forgetting.ResetEveryone(c, T0));
+        Assert.Equal(0, other.Talks);
+        Assert.Equal(4, p.Talks);
+    }
+}
+
 public class PanicTests
 {
     private static readonly DateTimeOffset T0 = new(2026, 11, 6, 12, 0, 0, TimeSpan.Zero);

@@ -49,7 +49,10 @@ public sealed record PersonRow
     public required double TrustRaw { get; init; }
     public required int FlightCount { get; init; }
 }
-public sealed record LogRow(string When, string Title, string Route, string Stars, string Money, string Quote, string Points);
+public sealed record LogRow(string When, string Title, string Route, string Stars, string StarSigns, string Money, string Quote, IReadOnlyList<string> Points, IBrush MoneyBrush);
+public sealed record StatRow(string Value, string Label);
+public sealed record TalkLine(string Who, string Text, IBrush Brush);
+public sealed record TalkRow(string When, string Names, string What, string Flag, IBrush FlagBrush, bool HasFlag, bool Offence, string Count, IReadOnlyList<TalkLine> Lines);
 public sealed record LedgerRow(string When, string Text, string Amount, IBrush AmountBrush);
 public sealed record SeatRow(string Label, string Who, string Kg, bool Guess);
 public sealed record FindingRow(string Text, IBrush Brush);
@@ -154,6 +157,10 @@ public sealed record Picture
     public required IReadOnlyList<PersonRow> People { get; init; }
     public required bool NoPeople { get; init; }
     public required string PeopleSummary { get; init; }
+    public required IReadOnlyList<StatRow> LogStats { get; init; }
+    public required IReadOnlyList<TalkRow> Talks { get; init; }
+    public required bool NoFlights { get; init; }
+    public required bool NoTalks { get; init; }
     public required IReadOnlyList<LogRow> Logbook { get; init; }
     public required IReadOnlyList<LedgerRow> Ledger { get; init; }
     public required MapData Map { get; init; }
@@ -267,7 +274,12 @@ public static class PictureBuilder
             NoPeople = !c.People.Any(p => p.FlightsWithYou > 0 || p.Talks > 0),
             Logbook = c.Missions.Where(m => m.Review is not null).OrderByDescending(m => m.LandedAt).Take(100).Select(m => new LogRow(
                 m.LandedAt is { } l ? LocalTime(l) : "", m.Title, L.F("{0} to {1}", m.Pickup?.Name, m.Dropoff?.Name), L.F("{0:0.0} of 5", m.Review!.Stars),
-                Nok(m.Review.PayNok + m.Review.TipNok - m.Review.RepairNok), m.Review.Quote ?? "", string.Join(", ", m.Review.Points))).ToList(),
+                new string('★', (int)Math.Round(m.Review.Stars)) + new string('☆', 5 - (int)Math.Round(m.Review.Stars)),
+                Nok(m.Review.PayNok + m.Review.TipNok - m.Review.RepairNok), m.Review.Quote ?? "", m.Review.Points.ToList(), m.Review.PayNok + m.Review.TipNok - m.Review.RepairNok < 0 ? Palette.Stop : Palette.Good)).ToList(),
+            LogStats = LogStatsFor(c),
+            NoFlights = !c.Missions.Any(m => m.Review is not null),
+            NoTalks = c.Talks.Count == 0,
+            Talks = TalksFor(c),
             Ledger = c.Ledger.AsEnumerable().Reverse().Take(100).Select(e => new LedgerRow(Clock.ToLocal(e.When).ToString("d MMM HH:mm", Culture), e.Text, Nok(e.AmountNok), e.AmountNok < 0 ? Palette.Stop : Palette.Good)).ToList(),
             FuelCache = string.Join(", ", c.FuelCache.Where(k => k.Value >= 1).Select(k => L.F("{0:0} gal at {1}", k.Value, WorldData.ById(k.Key)?.Name ?? k.Key))),
             Fuel = BuildFuel(h, focus, aircraft),
@@ -299,10 +311,47 @@ public static class PictureBuilder
         .Select(c => (IBrush)new Avalonia.Media.Immutable.ImmutableSolidColorBrush(Color.Parse(c))).ToArray();
     private static readonly IBrush Neutral = new Avalonia.Media.Immutable.ImmutableSolidColorBrush(Color.Parse("#7F9C95"));
 
+    private static IReadOnlyList<StatRow> LogStatsFor(CareerState c)
+    {
+        var done = c.Missions.Where(m => m.Review is not null).Select(m => m.Review!).ToList();
+        return
+        [
+            new($"{done.Count}", L.T("flights")),
+            new(done.Count > 0 ? $"{done.Average(r => r.Stars):0.0}" : "-", L.T("average stars")),
+            new(Nok(done.Sum(r => r.PayNok + r.TipNok)), L.T("paid")),
+            new(Nok(done.Sum(r => r.RepairNok)), L.T("for the mechanic")),
+            new($"{c.Talks.Count}", L.T("conversations")),
+            new($"{c.Talks.Count(t => t.Offence > 0)}", L.T("you behaved badly")),
+        ];
+    }
+
+    private static int _talksBuiltFor = -1;
+    private static IReadOnlyList<TalkRow> _talksBuilt = [];
+
+    /// <summary>Only rebuilt when a conversation has been added, so a page you are reading stays still.</summary>
+    private static IReadOnlyList<TalkRow> TalksFor(CareerState c)
+    {
+        if (c.Talks.Count == _talksBuiltFor) return _talksBuilt;
+        _talksBuiltFor = c.Talks.Count;
+        _talksBuilt = c.Talks.AsEnumerable().Reverse().Take(200).Select(t =>
+        {
+            string flag = t.Offence >= 2 ? L.T("You crossed the line") : t.Offence == 1 ? L.T("You were rude") : t.HungUp ? L.T("They hung up") : "";
+            string mode = t.Mode switch { "Phone" => L.T("On the phone"), "InPerson" => L.T("At the strip"), "Intercom" => L.T("In the air"), _ => L.T("After landing") };
+            var lines = t.Lines.Select(line =>
+            {
+                int colon = line.IndexOf(": ", StringComparison.Ordinal);
+                string who = colon > 0 ? line[..colon] : "";
+                return new TalkLine(who, colon > 0 ? line[(colon + 2)..] : line, who == c.PilotName ? Palette.Caution : Palette.Quiet);
+            }).ToList();
+            return new TalkRow(LocalTime(t.When), string.Join(", ", t.Names), t.MissionTitle is null ? mode : $"{mode}, {t.MissionTitle}", flag, t.Offence > 0 ? Palette.Stop : Palette.Caution, flag.Length > 0, t.Offence > 0, L.F("{0} lines", t.Lines.Count), lines);
+        }).ToList();
+        return _talksBuilt;
+    }
+
     private static PersonRow BuildPerson(GameHost h, Game.People.Person p)
     {
         var c = h.Career;
-        var mine = c.Missions.Where(m => m.CallerId == p.Id || m.CompanionIds.Contains(p.Id))
+        var mine = c.Missions.Where(m => (m.CallerId == p.Id || m.CompanionIds.Contains(p.Id)) && (p.ForgottenAt is null || (m.LandedAt ?? m.CreatedAt) > p.ForgottenAt))
             .Where(m => m.Phase is not (MissionPhase.Ringing or MissionPhase.Declined))
             .OrderByDescending(m => m.LandedAt ?? m.Plan.PickupTime ?? m.CreatedAt).ToList();
         var done = mine.Where(m => m.Review is not null).ToList();
