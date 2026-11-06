@@ -37,7 +37,6 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private string _liveLine = "";
     private string _toast = "";
     private DateTimeOffset _toastUntil;
-    private bool _picQueued;
     private bool _scrollLockWas;
 
     public event PropertyChangedEventHandler? PropertyChanged;

@@ -11,7 +11,8 @@ SLIK KOMMER DU I GANG
 
 NØKLENE DU TRENGER (du trenger dine egne, de koster lite)
 - Claude: lag konto på platform.claude.com, legg inn kreditter under Settings, Billing (5 dollar holder lenge), og lag en API-nøkkel.
-- ElevenLabs: lag konto på elevenlabs.io og lag en API-nøkkel. Gratiskontoen holder for å prøve.
+- ElevenLabs: lag konto på elevenlabs.io og lag en API-nøkkel. Gratiskontoen holder for å prøve, men da blir stemmene utenlandske.
+  Med betalt Starter-plan: trykk "Hent norske stemmer" i Innstillinger, så høres folk norske ut, også nordnorske. Egne klonede stemmer brukes også.
 Nøklene lagres kryptert på din Windows-bruker. Ikke del dem med noen.
 
 GODT Å VITE

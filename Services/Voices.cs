@@ -206,7 +206,9 @@ public sealed class VoiceCaster
             if (!upgrade) return p.VoiceId;
         }
         if (usable.Count == 0) return null;
-        var same = usable.Where(v => string.IsNullOrEmpty(v.Gender) || v.Gender.Equals(p.Gender, StringComparison.OrdinalIgnoreCase)).ToList();
+        // A voice someone cloned themselves often has no gender label. It plays male characters unless it is labelled otherwise,
+        // or it would be the only match for every woman from up north.
+        var same = usable.Where(v => (v.Gender.Length == 0 ? "male" : v.Gender).Equals(p.Gender, StringComparison.OrdinalIgnoreCase)).ToList();
         if (same.Count == 0) same = usable;
         string want = p.Nationality switch { "American" => "american", "British" => "british", "German" => "german", "Italian" => "italian", "Japanese" => "japanese", "Norwegian" or "Sami" => "norwegian", "Finnish" => "finnish", "Dutch" => "dutch", _ => "" };
         var accent = want.Length > 0 ? same.Where(v => v.Accent.Contains(want, StringComparison.OrdinalIgnoreCase)).ToList() : [];
