@@ -387,6 +387,67 @@ public class CareerTests
     }
 }
 
+public class PriceTests
+{
+    private static readonly DateTimeOffset Now = new(2026, 11, 6, 12, 0, 0, TimeSpan.FromHours(1));
+    private static MissionPlan ThreePeople() => new() { Passengers = [new(), new(), new()] };
+
+    [Fact]
+    public void Per_person_price_multiplies_by_the_people_on_board()
+    {
+        var plan = ThreePeople();
+        PlanPatcher.Apply(plan, new PlanPatch { PricePerPersonNok = 3500 }, Now);
+        Assert.Equal(10500, plan.PriceNok);
+        Assert.Equal(3500, plan.PricePerPersonNok);
+    }
+
+    [Fact]
+    public void Whole_trip_price_stays_the_same_when_people_are_added()
+    {
+        var plan = ThreePeople();
+        PlanPatcher.Apply(plan, new PlanPatch { PriceNok = 3500 }, Now);
+        PlanPatcher.Apply(plan, new PlanPatch { PassengerCount = 4 }, Now);
+        Assert.Equal(3500, plan.PriceNok);
+        Assert.Null(plan.PricePerPersonNok);
+    }
+
+    [Fact]
+    public void One_more_passenger_on_a_per_person_deal_means_one_more_fare()
+    {
+        var plan = ThreePeople();
+        PlanPatcher.Apply(plan, new PlanPatch { PricePerPersonNok = 3500 }, Now);
+        var changes = PlanPatcher.Apply(plan, new PlanPatch { PassengerCount = 4 }, Now);
+        Assert.Equal(14000, plan.PriceNok);
+        Assert.Contains(changes, c => c.Field == "price");
+    }
+
+    [Fact]
+    public void Changing_your_mind_from_per_person_to_a_flat_price_works_both_ways()
+    {
+        var plan = ThreePeople();
+        PlanPatcher.Apply(plan, new PlanPatch { PricePerPersonNok = 3500 }, Now);
+        PlanPatcher.Apply(plan, new PlanPatch { PriceNok = 9000 }, Now);
+        Assert.Equal(9000, plan.PriceNok);
+        Assert.Null(plan.PricePerPersonNok);
+        PlanPatcher.Apply(plan, new PlanPatch { PricePerPersonNok = 2000 }, Now);
+        Assert.Equal(6000, plan.PriceNok);
+    }
+
+    [Fact]
+    public void The_friend_who_turns_up_at_the_scale_pays_too()
+    {
+        var c = new CareerState();
+        var flow = new MissionFlow(c);
+        var m = new Mission
+        {
+            Plan = new MissionPlan { Passengers = [new(), new()], PricePerPersonNok = 3000, PriceNok = 6000 },
+            Truth = new MissionTruth { Passengers = [new() { Kg = 80 }, new() { Kg = 80 }, new() { Kg = 90 }] },
+        };
+        flow.PutOnScale(m, Now);
+        Assert.Equal(9000, m.Plan.PriceNok);
+    }
+}
+
 public class NameTests
 {
     [Fact]

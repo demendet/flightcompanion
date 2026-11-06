@@ -99,7 +99,8 @@ public static class Prompts
         if (m?.Plan is { } p)
         {
             if (p.PickupTime is { } when) parts.Add($"Pickup agreed for {Clock.ToLocal(when):dddd d MMMM HH:mm}.");
-            if (p.PriceNok is { } price) parts.Add($"Price agreed so far {price:0} kroner.");
+            if (p.PricePerPersonNok is { } each) parts.Add($"Price so far {each:0} kroner per person, {p.PriceNok:0} kroner in all.");
+            else if (p.PriceNok is { } price) parts.Add($"Price so far {price:0} kroner for the whole trip.");
             if (p.BaggageWeighed) parts.Add($"The bags were weighed: {p.BaggageKg:0} kg.");
         }
         if (weather is not null) parts.Add($"What your weather app says about today: {weather}.");
@@ -122,7 +123,7 @@ public static class Prompts
         - passenger_count is everyone flying except the pilot.
         - pickup and dropoff are place names as spoken. Return null if none was named.
         - pickup_time_local and return_time_local are ISO 8601 without a time zone, for example 2026-11-08T14:00:00. Work out dates such as "tomorrow" or "Saturday" from the current time given below. Return null if no time was said.
-        - price_nok is the amount agreed or the latest offer in Norwegian kroner.
+        - The price is the amount agreed or the latest offer in Norwegian kroner. If it was said per person ("3500 per person", "3500 kroner hver", "3500 per snute"), put it in price_per_person_nok and leave price_nok null. If it was for the whole trip or for all of them ("3500 for alle", "3500 for hele turen"), put it in price_nok and leave price_per_person_nok null. If it is unclear, use what the last speaker most plausibly meant. Numbers may be written as words or as "3.5k".
         - both_agreed is true only once the pilot and the customer have clearly both accepted the booking, false if they are still discussing.
         - pilot_declined is true only if the pilot refused the job and that stands.
         - call_is_over is true only if both have said goodbye or are clearly finished.
@@ -131,7 +132,7 @@ public static class Prompts
 
     public static string ScribeUser(DateTimeOffset now, MissionPlan plan, IEnumerable<string> transcript) => $"""
         Current time: {Clock.ToLocal(now):yyyy-MM-ddTHH:mm:ss} ({Clock.ToLocal(now):dddd}).
-        Current card: {plan.Passengers.Count} passengers, baggage {plan.BaggageKg:0} kg, cargo {plan.CargoKg:0} kg, pickup {WorldData.ById(plan.PickupId)?.Name ?? "unknown"}, dropoff {WorldData.ById(plan.DropoffId)?.Name ?? "unknown"}, time {(plan.PickupTime is { } t ? Clock.ToLocal(t).ToString("yyyy-MM-ddTHH:mm") : "unknown")}, price {plan.PriceNok?.ToString("0") ?? "unknown"} NOK.
+        Current card: {plan.Passengers.Count} passengers, baggage {plan.BaggageKg:0} kg, cargo {plan.CargoKg:0} kg, pickup {WorldData.ById(plan.PickupId)?.Name ?? "unknown"}, dropoff {WorldData.ById(plan.DropoffId)?.Name ?? "unknown"}, time {(plan.PickupTime is { } t ? Clock.ToLocal(t).ToString("yyyy-MM-ddTHH:mm") : "unknown")}, price {(plan.PricePerPersonNok is { } each ? each.ToString("0") + " NOK per person" : (plan.PriceNok?.ToString("0") ?? "unknown") + " NOK for the whole trip")}.
 
         Conversation:
         {string.Join("\n", transcript)}

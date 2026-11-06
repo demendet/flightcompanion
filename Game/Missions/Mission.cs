@@ -35,7 +35,15 @@ public sealed class MissionPlan
     public string BaggageNote { get; set; } = "";
     public double CargoKg { get; set; }
     public string CargoNote { get; set; } = "";
+    /// <summary>The whole fare. When a per person price was agreed this follows the head count.</summary>
     public double? PriceNok { get; set; }
+    /// <summary>Set when the deal is per person, so one more passenger means one more fare.</summary>
+    public double? PricePerPersonNok { get; set; }
+
+    public void RecalculatePrice()
+    {
+        if (PricePerPersonNok is { } each) PriceNok = each * Math.Max(1, Passengers.Count);
+    }
     /// <summary>Fuel at takeoff. Null until the pilot decides, then the planner suggests one.</summary>
     public double? FuelGal { get; set; }
     public bool Agreed { get; set; }

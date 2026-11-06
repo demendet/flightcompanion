@@ -276,7 +276,8 @@ public static class PictureBuilder
             Id = m.Id, Title = m.Title,
             Route = L.F("{0} to {1}", m.Pickup?.Name ?? L.T("Unknown"), m.Dropoff?.Name ?? L.T("Unknown")),
             When = m.Plan.PickupTime is { } when ? LocalTime(when) : L.T("No time agreed yet"),
-            Price = m.Plan.PriceNok is { } price ? Nok(price) : L.F("Around {0} is normal", Nok(h.SuggestedPrice(m))),
+            Price = m.Plan.PricePerPersonNok is { } each ? L.F("{0} per person, {1} in all", Nok(each), Nok(m.Plan.PriceNok ?? each))
+                : m.Plan.PriceNok is { } price ? L.F("{0} for the whole trip", Nok(price)) : L.F("Around {0} is normal", Nok(h.SuggestedPrice(m))),
             Phase = PhaseWords(m.Phase),
             DistanceLine = nm > 0 ? L.F("{0:0} nm, {1:0} minutes", nm, fuel.TripHours * 60) + (headwind > 5 ? L.F(", {0:0} kt headwind", headwind) : headwind < -5 ? L.F(", {0:0} kt tailwind", -headwind) : "") : L.T("Local flight"),
             Weather = weather, Seats = seats,

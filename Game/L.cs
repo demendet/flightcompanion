@@ -78,6 +78,8 @@ public static class L
         ["{0} to {1}"] = "{0} til {1}", ["Unknown"] = "Ukjent",
         ["No time agreed yet"] = "Ingen tid avtalt ennå", ["No time yet"] = "Ingen tid ennå",
         ["Around {0} is normal"] = "Rundt {0} er vanlig",
+        ["{0} per person, {1} in all"] = "{0} per person, {1} totalt",
+        ["{0} for the whole trip"] = "{0} for hele turen",
         ["{0:0} nm, {1:0} minutes"] = "{0:0} nm, {1:0} minutter",
         [", {0:0} kt headwind"] = ", {0:0} kt motvind", [", {0:0} kt tailwind"] = ", {0:0} kt medvind",
         ["Local flight"] = "Lokal tur",

@@ -168,6 +168,7 @@ public sealed class MissionFlow(CareerState state)
         if (m.Truth.Passengers.Count != plan.Passengers.Count)
             plan.Changes.Add(new PlanChange(now, "passengers", plan.Passengers.Count.ToString(), $"{m.Truth.Passengers.Count} turned up"));
         plan.Passengers = m.Truth.Passengers.Select(p => new PlanPassenger { PersonId = p.PersonId, Name = p.Name, Kg = p.Kg, KgKnown = true }).ToList();
+        plan.RecalculatePrice();
     }
 
     /// <summary>Stations as pounds for the sim, in book order. The app maps these to the aircraft's real station numbers by name.</summary>

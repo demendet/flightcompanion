@@ -457,7 +457,11 @@ public sealed class GameHost : IDisposable
 
     private void AddChat(string who, string text, bool pilot)
     {
-        _chat.Add(new ChatLine(DateTimeOffset.Now, who, text, pilot));
+        // Someone still talking grows their own bubble, so five sentences are one message, not five.
+        if (_chat.Count > 0 && _chat[^1].Who == who && _chat[^1].FromPilot == pilot)
+            _chat[^1] = _chat[^1] with { Text = _chat[^1].Text + " " + text };
+        else
+            _chat.Add(new ChatLine(DateTimeOffset.Now, who, text, pilot));
         if (!pilot) _talkMission?.Transcript.Add($"{who}: {text}");
         Changed?.Invoke();
     }

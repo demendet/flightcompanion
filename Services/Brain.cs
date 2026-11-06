@@ -92,6 +92,7 @@ public sealed class Brain(KeyStore keys, AppSettings settings) : ISpeakerModel
             ["pickup_time_local"] = Nullable("string"),
             ["return_time_local"] = Nullable("string"),
             ["price_nok"] = Nullable("number"),
+            ["price_per_person_nok"] = Nullable("number"),
             ["both_agreed"] = Nullable("boolean"),
             ["pilot_declined"] = Nullable("boolean"),
             ["call_is_over"] = Nullable("boolean"),
@@ -140,7 +141,7 @@ public sealed class Brain(KeyStore keys, AppSettings settings) : ISpeakerModel
                 CargoKg = D("cargo_kg"), CargoNote = S("cargo_note"),
                 Pickup = S("pickup"), Dropoff = S("dropoff"),
                 PickupTimeLocal = S("pickup_time_local"), ReturnTimeLocal = S("return_time_local"),
-                PriceNok = D("price_nok"), BothAgreed = B("both_agreed"), PilotDeclined = B("pilot_declined"),
+                PriceNok = D("price_nok"), PricePerPersonNok = D("price_per_person_nok"), BothAgreed = B("both_agreed"), PilotDeclined = B("pilot_declined"),
                 CallIsOver = B("call_is_over"), NewNote = S("new_note"),
             };
         }

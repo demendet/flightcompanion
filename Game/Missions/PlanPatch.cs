@@ -21,7 +21,10 @@ public sealed record PlanPatch
     public string? PickupTimeLocal { get; init; }
     /// <summary>ISO 8601 local date and time for a later pickup on the way back, when one was agreed.</summary>
     public string? ReturnTimeLocal { get; init; }
+    /// <summary>The price for the whole trip, whatever the number of people.</summary>
     public double? PriceNok { get; init; }
+    /// <summary>The price per passenger, when that is how it was said.</summary>
+    public double? PricePerPersonNok { get; init; }
     public bool? BothAgreed { get; init; }
     public bool? PilotDeclined { get; init; }
     public bool? CallIsOver { get; init; }
@@ -94,11 +97,20 @@ public static class PlanPatcher
             Note("return", plan.ReturnTime?.ToString("ddd dd MMM HH:mm") ?? "-", back.ToString("ddd dd MMM HH:mm"));
             plan.ReturnTime = back;
         }
-        if (p.PriceNok is { } price and >= 0 && (plan.PriceNok is null || Math.Abs(plan.PriceNok.Value - price) >= 1))
+        double? totalBefore = plan.PriceNok;
+        if (p.PricePerPersonNok is { } each and >= 0)
         {
-            Note("price", plan.PriceNok?.ToString("0") ?? "-", price.ToString("0"));
+            plan.PricePerPersonNok = each;
+        }
+        else if (p.PriceNok is { } price and >= 0 && (plan.PricePerPersonNok is not null || plan.PriceNok is null || Math.Abs(plan.PriceNok.Value - price) >= 1))
+        {
+            plan.PricePerPersonNok = null;
             plan.PriceNok = price;
         }
+        // Also runs when only the head count moved: with a per person deal, the fare follows the passengers.
+        plan.RecalculatePrice();
+        if (plan.PriceNok is { } after && (totalBefore is null || Math.Abs(totalBefore.Value - after) >= 1))
+            Note("price", totalBefore?.ToString("0") ?? "-", after.ToString("0"));
         if (p.BothAgreed is { } agreed && agreed != plan.Agreed)
         {
             Note("agreed", plan.Agreed ? "yes" : "no", agreed ? "yes" : "no");
