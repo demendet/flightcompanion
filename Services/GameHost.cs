@@ -725,9 +725,24 @@ public sealed class GameHost : IDisposable
 
     // ---- Flying ----------------------------------------------------------------------------------------------------
 
+    private bool _simFactsLogged;
+    private DateTimeOffset _firstSample;
+
     private void OnTelemetry(Telemetry t)
     {
         Latest = t;
+        if (!_simFactsLogged)
+        {
+            if (_firstSample == default) _firstSample = t.Time;
+            else if ((t.Time - _firstSample).TotalSeconds > 4)
+            {
+                _simFactsLogged = true;
+                Log.Info("Sim", $"Aircraft: {t.Title}, weight {t.TotalWeightLb:0} lb, CG {t.CgPercent:0.0} percent, fuel {t.FuelGal:0.0} gal, on foot {t.OnFoot}");
+                Log.Info("Sim", "Stations: " + string.Join("; ", Sim.Stations.Select(s => $"{s.SimIndex} '{s.Name}' = {s.Role}, {Sim.StationPounds.ElementAtOrDefault(s.SimIndex - 1):0} lb")));
+                Log.Info("Sim", "Tanks: " + string.Join("; ", Sim.TankCapacityGal.Select(k => $"{k.Key} {k.Value:0.0} gal")));
+                Log.Info("Sim", "People to place: " + string.Join(", ", _peopleTitles.Take(6)) + $" ({_peopleTitles.Count} in all)");
+            }
+        }
         Career.LastLat = t.Lat;
         Career.LastLon = t.Lon;
         var reserve = AircraftProfile.ForTitle(t.Title).BurnGph * 0.5;

@@ -99,6 +99,34 @@ internal static class SelfTest
             return $"replied \"{reply}\" in {sw.ElapsedMilliseconds} ms";
         });
 
+        await Step("Interrupting someone mid sentence", async () =>
+        {
+            using var audio = new AudioOut();
+            var fake = new FakeSpeaker();
+            var clips = new ClipCache(new ElevenLabs(keys));
+            var who = new Game.People.Person { Name = "Test", Language = "no", SpeaksNorwegian = true };
+            using var talk = new Conversation(fake, new SilentVoice(), clips, new VoiceCaster(new ElevenLabs(keys)), audio, who, "none", VoiceFx.Phone, "sys", () => "situation", "no");
+            talk.Open("Say hello");
+            await Task.Delay(1200, ct);              // first sentence has played, the second is playing
+            talk.PilotStartedTalking();
+            talk.OnPilotSpoke("Vent litt", "no");
+            await Task.Delay(1000, ct);              // second reply starts
+            talk.OnPilotSpoke("Hva sa du", "no");
+            await Task.Delay(5000, ct);              // third reply plays to its end
+            var h = talk.History;
+            bool neverEndedOnThem = fake.LastTurnFromPilot.All(x => x);
+            string shape = string.Join(" / ", h.Select(t => (t.FromPilot ? "P:" : "T:") + t.Text));
+            if (!neverEndedOnThem) throw new InvalidOperationException("A request ended on their own words, the API would refuse it: " + shape);
+            if (fake.Requests < 3) throw new InvalidOperationException($"Only {fake.Requests} requests: {shape}");
+            return $"{fake.Requests} requests, each ending on the pilot. History: {shape}";
+        });
+
+        await Step("Scripted call with the real models", async () =>
+        {
+            if (string.IsNullOrEmpty(keys.Anthropic)) return "skipped, no Claude key yet";
+            return await ScriptedCall(keys, settings, outDir, ct);
+        });
+
         await Step("METAR feed", async () =>
         {
             var w = new WeatherFeed();
@@ -119,6 +147,94 @@ internal static class SelfTest
             string p = Path.Combine(AppPaths.Models, settings.WhisperModelFile);
             return Task.FromResult(File.Exists(p) ? $"present, {new FileInfo(p).Length / 1_000_000} MB (not loaded, it would use the GPU)" : "MISSING, it downloads on first start");
         });
+    }
+
+    private sealed class FakeSpeaker : ISpeakerModel
+    {
+        public int Requests;
+        public readonly List<bool> LastTurnFromPilot = [];
+
+        public async IAsyncEnumerable<string> SpeakAsync(string system, IReadOnlyList<Turn> history, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct)
+        {
+            Requests++;
+            LastTurnFromPilot.Add(history[^1].FromPilot);
+            foreach (var word in "Første setning her. Andre setning kommer nå og den er ganske lang. Tredje setning til slutt.".Split(' '))
+            {
+                await Task.Delay(30, ct);
+                yield return word + " ";
+            }
+        }
+    }
+
+    /// <summary>Half a second of silence for each sentence: the timing of speech without making a sound.</summary>
+    private sealed class SilentVoice : IVoiceStream
+    {
+        public async Task StreamAsync(string text, string voiceId, string language, string? previousText, Action<byte[], int> onPcm, CancellationToken ct)
+        {
+            var chunk = new byte[VoiceChannel.SampleRate / 10 * 2];
+            for (int i = 0; i < 8; i++)
+            {
+                await Task.Delay(20, ct);
+                onPcm(chunk, chunk.Length);
+            }
+        }
+    }
+
+    /// <summary>A whole negotiation in Norwegian, text only: real Claude replies, real note taking, measured latency, no voice credits.</summary>
+    private static async Task<string> ScriptedCall(KeyStore keys, AppSettings settings, string outDir, CancellationToken ct)
+    {
+        var brain = new Brain(keys, settings);
+        var career = new Game.Career.CareerState { PilotName = "Matt" };
+        var rng = new Random(7);
+        var tpl = Game.Missions.MissionCatalog.ById("fishing_camp")!;
+        var person = Game.People.CastFactory.Create(rng, "German", "salmon angler");
+        person.Honesty = 0;
+        career.People.Add(person);
+        var m = Game.Missions.MissionFactory.Create(tpl, new Game.Career.CareerView(career), rng, DateTimeOffset.Now, person);
+        career.Missions.Add(m);
+        string system = Prompts.Speaker(person, m, career, TalkMode.Phone, null, "no");
+        var history = new List<Turn>();
+        var log = new System.Text.StringBuilder();
+        var times = new List<long>();
+
+        async Task Turn(string user)
+        {
+            history.Add(new Turn(true, user));
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            long first = -1;
+            var text = new System.Text.StringBuilder();
+            await foreach (var d in brain.SpeakAsync(system, history, ct))
+            {
+                if (first < 0) first = sw.ElapsedMilliseconds;
+                text.Append(d);
+            }
+            times.Add(first);
+            string reply = SpeechText.Clean(text.ToString());
+            history.Add(new Turn(false, reply));
+            log.AppendLine($"[{first} ms] {person.Name}: {reply}");
+        }
+
+        await Turn("[The pilot just picked up the phone. Say hello.]");
+        foreach (var line in new[]
+        {
+            "Hei, Matt her. Hvor mange er dere, og hvor mye bagasje har dere?",
+            "Det blir tungt inn til stripa. Kan dere klare dere med tjue kilo mindre?",
+            "Greit. Hva med i morgen klokka to? Det blir seks tusen kroner.",
+            "Avtale. Vi snakkes, ha det.",
+        })
+        {
+            log.AppendLine("Matt: " + line);
+            await Turn(line);
+        }
+
+        var transcript = history.Where(t => !t.Text.StartsWith('[')).Select(t => (t.FromPilot ? "Matt: " : person.Name + ": ") + t.Text);
+        var patchWatch = System.Diagnostics.Stopwatch.StartNew();
+        var patch = await brain.ListenAsync(Prompts.ScribeUser(DateTimeOffset.Now, m.Plan, transcript), ct);
+        log.AppendLine($"Notes after {patchWatch.ElapsedMilliseconds} ms: {System.Text.Json.JsonSerializer.Serialize(patch)}");
+        log.AppendLine("Hidden truth: " + string.Join(" | ", m.SecretsForCaller));
+        File.WriteAllText(Path.Combine(outDir, "scripted-call.txt"), log.ToString());
+        times.Sort();
+        return $"first words median {times[times.Count / 2]} ms, worst {times[^1]} ms, notes in {patchWatch.ElapsedMilliseconds} ms, transcript in scripted-call.txt";
     }
 
     private static string _results = "";

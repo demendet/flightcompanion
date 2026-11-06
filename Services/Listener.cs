@@ -367,19 +367,33 @@ public sealed class Listener : IDisposable, IMMNotificationClient
 /// <summary>Silero voice detection, one 32 ms frame at a time, on the CPU so it does not touch the sim's GPU.</summary>
 public sealed class SileroVadRunner : IDisposable
 {
-    private readonly Vad _vad;
+    private readonly VadModel _model;
     private readonly VadState _state;
 
     public SileroVadRunner()
     {
         VadRuntime.EnsureNativeRuntimeAvailable();
-        _vad = new Vad();
-        _state = _vad.Model.CreateState(SpeechGate.SampleRate, 1);
+        _model = new VadModel(BundledModel());
+        _state = _model.CreateState(SpeechGate.SampleRate, 1);
     }
 
-    public double Probability(float[] frame) => _vad.Model.DetectSpeech(frame, _state, SpeechGate.SampleRate);
+    /// <summary>The package carries its models as resources. This takes the current one, not the legacy v4.</summary>
+    private static byte[] BundledModel()
+    {
+        var manager = new System.Resources.ResourceManager("SileroVad.Properties.Resources", typeof(Vad).Assembly);
+        var set = manager.GetResourceSet(System.Globalization.CultureInfo.InvariantCulture, true, true)
+            ?? throw new InvalidOperationException("The voice detection package has no resources");
+        foreach (System.Collections.DictionaryEntry e in set)
+        {
+            if (e.Value is byte[] bytes && !e.Key.ToString()!.Contains("v4", StringComparison.OrdinalIgnoreCase))
+                return bytes;
+        }
+        throw new InvalidOperationException("The voice detection package has no model");
+    }
+
+    public double Probability(float[] frame) => _model.DetectSpeech(frame, _state, SpeechGate.SampleRate);
 
     public void Reset() => _state.Reset();
 
-    public void Dispose() => _vad.Dispose();
+    public void Dispose() => _model.Dispose();
 }

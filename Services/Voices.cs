@@ -26,7 +26,7 @@ public sealed class VoiceException(HttpStatusCode status, string message) : Exce
 /// ElevenLabs, always streaming, on the Flash model: the first audio comes while the sentence is still being generated.
 /// The old app used the non-streaming route and waited for the whole clip.
 /// </summary>
-public sealed class ElevenLabs(KeyStore keys)
+public sealed class ElevenLabs(KeyStore keys) : IVoiceStream
 {
     private const string Model = "eleven_flash_v2_5";
     private static readonly HttpClient Http = new(new SocketsHttpHandler { PooledConnectionLifetime = TimeSpan.FromMinutes(10), EnableMultipleHttp2Connections = true })

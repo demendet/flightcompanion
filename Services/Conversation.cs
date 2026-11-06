@@ -15,10 +15,20 @@ namespace FlightCompanion.Services;
 /// so talking over someone stops the voice, the AI and the audio generation together. What goes in the history is only
 /// what the pilot actually heard, because a person cannot remember telling you something you talked over.
 /// </summary>
+public interface ISpeakerModel
+{
+    IAsyncEnumerable<string> SpeakAsync(string system, IReadOnlyList<Turn> history, CancellationToken ct);
+}
+
+public interface IVoiceStream
+{
+    Task StreamAsync(string text, string voiceId, string language, string? previousText, Action<byte[], int> onPcm, CancellationToken ct);
+}
+
 public sealed class Conversation : IDisposable
 {
-    private readonly Brain _brain;
-    private readonly ElevenLabs _voice;
+    private readonly ISpeakerModel _brain;
+    private readonly IVoiceStream _voice;
     private readonly ClipCache _clips;
     private readonly VoiceCaster _caster;
     private readonly AudioOut _audio;
@@ -52,7 +62,7 @@ public sealed class Conversation : IDisposable
     }
     public bool IsSpeaking => _channel.IsPlaying;
 
-    public Conversation(Brain brain, ElevenLabs voice, ClipCache clips, VoiceCaster caster, AudioOut audio, Person person, string voiceId, VoiceFx fx, string system, Func<string> situation, string talkLanguage)
+    public Conversation(ISpeakerModel brain, IVoiceStream voice, ClipCache clips, VoiceCaster caster, AudioOut audio, Person person, string voiceId, VoiceFx fx, string system, Func<string> situation, string talkLanguage)
     {
         _talkLanguage = talkLanguage;
         _brain = brain; _voice = voice; _clips = clips; _caster = caster; _audio = audio;

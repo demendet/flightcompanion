@@ -16,7 +16,7 @@ namespace FlightCompanion.Services;
 public sealed record Turn(bool FromPilot, string Text);
 
 /// <summary>Claude: one model speaks as the person, one listens and fills in the card. Speech never waits for the notes.</summary>
-public sealed class Brain(KeyStore keys, AppSettings settings)
+public sealed class Brain(KeyStore keys, AppSettings settings) : ISpeakerModel
 {
     private AnthropicClient? _client;
     private string? _clientKey;
