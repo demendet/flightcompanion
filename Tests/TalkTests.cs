@@ -149,7 +149,15 @@ public class SpeechGateTests
 
 public class StationMapperTests
 {
-    private static readonly string[] C172Names = ["Pilot", "Copilot", "Rear Passenger Left", "Rear Passenger Right", "Baggage 1", "Baggage 2"];
+    // Exactly what the sim reported for "C172SP G1000 Passengers" on 2026-11-06.
+    private static readonly string[] C172Names = ["Pilot", "Co-Pilot", "Passenger Left", "Passenger Right", "Tail 1", "Tail 2"];
+
+    [Fact]
+    public void The_real_172_stations_map_to_the_right_roles()
+    {
+        var map = StationMapper.Map(C172Names);
+        Assert.Equal([StationRole.Pilot, StationRole.FrontSeat, StationRole.RearSeat, StationRole.RearSeat, StationRole.BaggageA, StationRole.BaggageB], map.Select(x => x.Role));
+    }
 
     [Fact]
     public void Roles_come_from_names_whatever_the_order()

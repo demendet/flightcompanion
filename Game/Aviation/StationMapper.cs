@@ -17,7 +17,7 @@ public static class StationMapper
         {
             string n = names[i].ToLowerInvariant();
             StationRole role;
-            if (n.Contains("baggage") || n.Contains("cargo") || n.Contains("luggage") || n.Contains("freight"))
+            if (n.Contains("baggage") || n.Contains("cargo") || n.Contains("luggage") || n.Contains("freight") || n.Contains("tail"))
             {
                 role = baggageSeen++ == 0 ? StationRole.BaggageA : StationRole.BaggageB;
             }

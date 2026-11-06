@@ -17,7 +17,7 @@ namespace FlightCompanion.Services;
 public sealed class SimLink : IDisposable
 {
     private enum Def { Flight = 1, Avatar, Touchdown, Count, Tanks, StationBase = 100, WriteBase = 1000 }
-    private enum Req { Flight = 1, Avatar, Touchdown, Count, Tanks, StationBase = 100, SpawnBase = 5000, RemoveBase = 7000 }
+    private enum Req { Flight = 1, Avatar, Touchdown, Count, Tanks, ListAll = 20, ListGround, ListAnimal, StationBase = 100, SpawnBase = 5000, RemoveBase = 7000 }
 
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Ansi, Pack = 1)]
     private struct FlightData
@@ -115,6 +115,7 @@ public sealed class SimLink : IDisposable
             sc.OnRecvException += (_, d) => Log.Info("Sim", $"SimConnect exception {(SIMCONNECT_EXCEPTION)d.dwException} on send {d.dwSendID}, index {d.dwIndex}");
             sc.OnRecvSimobjectData += OnData;
             sc.OnRecvAssignedObjectId += OnAssigned;
+            sc.OnRecvEnumerateSimobjectAndLiveryList += OnObjectList;
             _sc = sc;
             Define(sc);
             return true;
@@ -181,6 +182,31 @@ public sealed class SimLink : IDisposable
         sc.RequestDataOnSimObject(Req.Touchdown, Def.Touchdown, user, SIMCONNECT_PERIOD.SECOND, SIMCONNECT_DATA_REQUEST_FLAG.CHANGED, 0, 0, 0);
         sc.RequestDataOnSimObject(Req.Count, Def.Count, user, SIMCONNECT_PERIOD.SECOND, SIMCONNECT_DATA_REQUEST_FLAG.DEFAULT, 0, 0, 0);
         sc.RequestDataOnSimObject(Req.Tanks, Def.Tanks, user, SIMCONNECT_PERIOD.SECOND, SIMCONNECT_DATA_REQUEST_FLAG.DEFAULT, 0, 0, 0);
+        // Everything the sim can place, so the game can use what is really there. Read once per connection.
+        sc.EnumerateSimObjectsAndLiveries(Req.ListAll, SIMCONNECT_SIMOBJECT_TYPE.ALL);
+        sc.EnumerateSimObjectsAndLiveries(Req.ListGround, SIMCONNECT_SIMOBJECT_TYPE.GROUND);
+        sc.EnumerateSimObjectsAndLiveries(Req.ListAnimal, SIMCONNECT_SIMOBJECT_TYPE.ANIMAL);
+    }
+
+    private readonly HashSet<string> _objectTitles = new(StringComparer.OrdinalIgnoreCase);
+    public IReadOnlyCollection<string> ObjectTitles { get { lock (_objectTitles) return _objectTitles.ToList(); } }
+
+    private void OnObjectList(SimConnect sc, SIMCONNECT_RECV_ENUMERATE_SIMOBJECT_AND_LIVERY_LIST d)
+    {
+        lock (_objectTitles)
+        {
+            foreach (var o in d.rgData.OfType<SIMCONNECT_ENUMERATE_SIMOBJECT_LIVERY>())
+                if (!string.IsNullOrEmpty(o.AircraftTitle)) _objectTitles.Add(o.AircraftTitle);
+            if (d.dwEntryNumber + 1 >= d.dwOutOf)
+            {
+                try
+                {
+                    File.WriteAllLines(Path.Combine(AppPaths.Local, "simobjects.txt"), _objectTitles.OrderBy(t => t));
+                    Log.Info("Sim", $"The sim lists {_objectTitles.Count} placeable objects, written to simobjects.txt");
+                }
+                catch (IOException ex) { Log.Error("Sim", "Could not write the object list", ex); }
+            }
+        }
     }
 
     private void OnData(SimConnect sc, SIMCONNECT_RECV_SIMOBJECT_DATA d)
@@ -282,10 +308,12 @@ public sealed class SimLink : IDisposable
             uint req = _nextSpawnReq++;
             try
             {
-                sc.AICreateSimulatedObject(title, new SIMCONNECT_DATA_INITPOSITION
+                // The EX1 call is the one that also handles the sim's newer modular objects.
+                sc.AICreateSimulatedObject_EX1(title, "", new SIMCONNECT_DATA_INITPOSITION
                 {
                     Latitude = lat, Longitude = lon, Altitude = 0, Pitch = 0, Bank = 0, Heading = headingDeg, OnGround = 1, Airspeed = 0,
                 }, (Req)req);
+                Log.Info("Sim", $"Placed {title}");
                 return req;
             }
             catch (COMException ex)

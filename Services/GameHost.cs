@@ -185,6 +185,28 @@ public sealed class GameHost : IDisposable
 
     public bool ReadyForCalls => Brain.HasKey && Voice.HasKey;
 
+    /// <summary>
+    /// The book numbers, corrected by the aircraft actually loaded: its empty weight is what is left after taking away
+    /// what the sim says is in the seats and tanks. The first live read showed about 95 lb less than the book.
+    /// </summary>
+    public AircraftProfile CurrentAircraft()
+    {
+        var book = AircraftProfile.ForTitle(Latest?.Title);
+        if (Latest is not { TotalWeightLb: > 0 } t || Sim.StationPounds.Length == 0) return book;
+        double empty = t.TotalWeightLb - Sim.StationPounds.Sum() - t.FuelGal * book.FuelLbPerGal;
+        return empty > book.EmptyWeightLb * 0.7 && empty < book.EmptyWeightLb * 1.3 ? book with { EmptyWeightLb = empty } : book;
+    }
+
+    /// <summary>The sim's pilot station when it has one. It reads 0 while your character is outside, then your set weight counts.</summary>
+    public double PilotKgNow()
+    {
+        var stations = Sim.Stations;
+        var pounds = Sim.StationPounds;
+        var pilot = stations.FirstOrDefault(s => s.Role == StationRole.Pilot);
+        if (pilot is not null && pilot.SimIndex <= pounds.Length && pounds[pilot.SimIndex - 1] > 40) return Units.LbToKg(pounds[pilot.SimIndex - 1]);
+        return Career.PilotKg;
+    }
+
     // ---- Clock -------------------------------------------------------------------------------------------------
 
     private void Tick()
@@ -531,7 +553,7 @@ public sealed class GameHost : IDisposable
     public double SuggestedPrice(Mission m)
     {
         var tpl = MissionCatalog.ById(m.TemplateId);
-        var (_, fuel, _) = PlanEvaluator.Evaluate(m, AircraftProfile.ForTitle(Latest?.Title), Career.PilotKg);
+        var (_, fuel, _) = PlanEvaluator.Evaluate(m, CurrentAircraft(), PilotKgNow());
         return Math.Round(Math.Max(tpl?.MinimumNok ?? 2500, fuel.TripHours * (tpl?.PricePerHourNok ?? 5200)) / 100) * 100;
     }
 
@@ -585,13 +607,13 @@ public sealed class GameHost : IDisposable
     public void Board() => Post(() =>
     {
         if (ActiveMission is not { Phase: MissionPhase.AtPickup or MissionPhase.Boarding } m) return;
-        var a = AircraftProfile.ForTitle(Latest?.Title);
+        var a = CurrentAircraft();
         // Skip the scale and what goes on board is whatever they really brought, which is the whole point of the scale.
         // After weighing, it is the deal made at the scale, including anything or anyone left behind.
         bool weighed = m.Plan.BaggageWeighed;
         var load = LoadPlanner.Compute(new LoadRequest
         {
-            Aircraft = a, PilotKg = Career.PilotKg,
+            Aircraft = a, PilotKg = PilotKgNow(),
             PassengerKg = (weighed ? m.Plan.Passengers : m.Truth.Passengers).Select(p => p.Kg).ToList(),
             BaggageKg = weighed ? m.Plan.BaggageKg + m.Plan.CargoKg : m.Truth.BaggageKg + m.Truth.CargoKg,
             FuelGal = Latest?.FuelGal ?? 30,
@@ -809,13 +831,18 @@ public sealed class GameHost : IDisposable
 
     private void SpawnPeople(Mission m, Place place)
     {
-        if (_peopleTitles.Count == 0 || _spawned.ContainsKey(m.Id)) return;
+        if (_spawned.ContainsKey(m.Id)) return;
         var ids = new List<uint>();
-        int n = m.Truth.Passengers.Count;
-        for (int i = 0; i < n; i++)
+        int month = Clock.ToLocal(DateTimeOffset.Now).Month;
+        var simList = Sim.ObjectTitles;
+        int i = 0;
+        foreach (var p in m.Truth.Passengers)
         {
+            string gender = Career.PersonById(p.PersonId)?.Gender ?? "male";
+            string title = Figures.Pick(gender, month, _peopleTitles, simList, _rng);
             var (lat, lon) = Geo.Offset(place.MeetingLat, place.MeetingLon, 60 + i * 40, 3 + i * 1.5);
-            if (Sim.Spawn(_peopleTitles[_rng.Next(_peopleTitles.Count)], lat, lon, _rng.NextDouble() * 360) is { } id) ids.Add(id);
+            if (Sim.Spawn(title, lat, lon, _rng.NextDouble() * 360) is { } id) ids.Add(id);
+            i++;
         }
         _spawned[m.Id] = ids;
     }

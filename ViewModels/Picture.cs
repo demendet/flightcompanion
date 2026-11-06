@@ -128,7 +128,7 @@ public static class PictureBuilder
         var c = h.Career;
         var now = DateTimeOffset.Now;
         var title = h.Latest?.Title;
-        var aircraft = AircraftProfile.ForTitle(title);
+        var aircraft = h.CurrentAircraft();
 
         var focus = h.TalkMission ?? h.ActiveMission ?? h.Ringing?.Mission
             ?? c.MissionById(selectedMissionId)
@@ -236,11 +236,12 @@ public static class PictureBuilder
         // After loading, the fuel on board is the fuel. Before that, the card shows what the trip needs.
         bool loaded = m.Phase is MissionPhase.Loaded or MissionPhase.Airborne or MissionPhase.Landed;
         double? fuelNow = (m.Phase is MissionPhase.AtPickup or MissionPhase.Boarding || loaded) ? t?.FuelGal : null;
-        var (load, fuel, nm) = PlanEvaluator.Evaluate(m, a, h.Career.PilotKg, headwind, forecast?.TempC ?? t?.OatC ?? 5, fuelNow);
+        double pilotKg = h.PilotKgNow();
+        var (load, fuel, nm) = PlanEvaluator.Evaluate(m, a, pilotKg, headwind, forecast?.TempC ?? t?.OatC ?? 5, fuelNow);
 
         var seats = new List<SeatRow>();
         var pax = m.Plan.Passengers.OrderByDescending(x => x.Kg).ToList();
-        seats.Add(new SeatRow(L.T("Front left"), h.Career.PilotName, $"{h.Career.PilotKg:0} kg", false));
+        seats.Add(new SeatRow(L.T("Front left"), h.Career.PilotName, $"{pilotKg:0} kg", false));
         string[] labels = [L.T("Front right"), L.T("Rear left"), L.T("Rear right")];
         for (int i = 0; i < labels.Length; i++)
         {

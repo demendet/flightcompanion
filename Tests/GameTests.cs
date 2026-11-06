@@ -387,6 +387,47 @@ public class CareerTests
     }
 }
 
+public class FigureTests
+{
+    private static readonly string[] NoTitles = [];
+
+    [Theory]
+    [InlineData("female", 11, "Tarmac_Female_Winter_")]
+    [InlineData("male", 1, "Tarmac_Male_Winter_")]
+    [InlineData("female", 7, "Tarmac_Female_Summer_")]
+    public void The_sims_own_people_match_gender_and_season(string gender, int month, string prefix)
+        => Assert.StartsWith(prefix, Figures.Pick(gender, month, [], NoTitles, new Random(1)));
+
+    [Fact]
+    public void Built_in_titles_are_only_ones_the_users_scenery_is_known_to_place()
+    {
+        string[] known = ["Tarmac_Male_Summer_Hispanic", "Tarmac_Female_Summer_Hispanic", "Tarmac_Female_Winter_Caucasian", "Tarmac_Male_Winter_Caucasian",
+            "Tarmac_Female_Summer_Indian", "Tarmac_Male_Summer_Caucasian", "Tarmac_Female_Summer_Caucasian"];
+        for (int seed = 0; seed < 200; seed++)
+            foreach (var g in new[] { "male", "female" })
+                foreach (var month in new[] { 1, 7 })
+                {
+                    string t = Figures.Pick(g, month, [], NoTitles, new Random(seed));
+                    if (month == 1) Assert.Contains(t, known);
+                }
+    }
+
+    [Fact]
+    public void Installed_passenger_figures_win_and_match_gender()
+    {
+        string[] installed = ["ENGM_passenger_F01_W", "ENGM_passenger_M03_W"];
+        Assert.Equal("ENGM_passenger_F01_W", Figures.Pick("female", 1, installed, NoTitles, new Random(2)));
+        Assert.Equal("ENGM_passenger_M03_W", Figures.Pick("male", 1, installed, NoTitles, new Random(2)));
+    }
+
+    [Fact]
+    public void The_sims_list_is_trusted_over_the_guess()
+    {
+        string[] sim = ["Tarmac_Male_Winter_Arab", "Boat01"];
+        Assert.Equal("Tarmac_Male_Winter_Arab", Figures.Pick("male", 1, [], sim, new Random(3)));
+    }
+}
+
 public class WeatherTests
 {
     [Fact]
