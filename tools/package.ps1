@@ -4,7 +4,7 @@ $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
 $publish = Join-Path $Out 'FlightCompanion'
 if (Test-Path $publish) { Remove-Item $publish -Recurse -Force -Confirm:$false }
-$p = Start-Process dotnet -PassThru -NoNewWindow -Wait -ArgumentList @('publish', "$root\FlightCompanion.csproj", '-c', 'Release', '-r', 'win-x64', '--self-contained', 'true', '-o', $publish, '-m:1', '-nodeReuse:false', '-p:UseSharedCompilation=false', '--nologo', '-v', 'q')
+$p = Start-Process dotnet -PassThru -NoNewWindow -Wait -ArgumentList @('publish', "$root\FlightCompanion.csproj", '-c', 'Release', '-r', 'win-x64', '--self-contained', 'true', '-o', $publish, '-m:1', '-p:DebugType=none', '-nodeReuse:false', '-p:UseSharedCompilation=false', '--nologo', '-v', 'q')
 if ($p.ExitCode -ne 0) { throw "publish failed" }
 Copy-Item "$root\docs\LES-MEG.txt" $publish
 # Refuse to ship anything that looks like a secret.
