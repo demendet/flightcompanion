@@ -108,6 +108,7 @@ public static class L
         ["Never flew to {0}"] = "Fløy aldri til {0}",
         ["sight"] = "severdighet",
         ["You behaved badly towards them"] = "Du oppførte deg dårlig mot dem",
+        ["They refused to pay for the flight"] = "De nektet å betale for turen",
         ["Heard how you treated a customer"] = "Hørte hvordan du behandlet en kunde",
         ["Never contact me again. I am telling people what you said."] = "Ikke ta kontakt igjen. Jeg forteller folk hva du sa.",
         ["You cancelled {0}"] = "Du avlyste {0}",

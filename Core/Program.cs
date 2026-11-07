@@ -37,6 +37,12 @@ internal static class Program
             Views.SelfTest.TalkAsync(args[1]).GetAwaiter().GetResult();
             return;
         }
+        if (args.Length == 2 && args[0] == "--test-air")
+        {
+            AttachConsole(-1);
+            Views.SelfTest.HarassedInTheAirAsync(args[1]).GetAwaiter().GetResult();
+            return;
+        }
         if (args.Length == 2 && args[0] == "--test-screams")
         {
             AttachConsole(-1);

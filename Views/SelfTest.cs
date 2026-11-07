@@ -16,6 +16,46 @@ namespace FlightCompanion.Views;
 /// </summary>
 internal static class SelfTest
 {
+    /// <summary>Real Claude: being harassed in a seat you cannot leave, then getting out on the ground.</summary>
+    public static async Task HarassedInTheAirAsync(string outDir)
+    {
+        Directory.CreateDirectory(outDir);
+        var brain = new Brain(new KeyStore(), AppSettings.Load());
+        var ct = CancellationToken.None;
+        var report = new List<string>();
+        const string Line = "Du får gratis tur hvis jeg får knulle deg.";
+        var hege = new Game.People.Person { Name = "Hege Lund", Language = "no", SpeaksNorwegian = true, Home = "Finnmark" };
+        var m = new Game.Missions.Mission { CallerId = hege.Id, Title = "Tur", Premise = "You need to get to Lakselv.", Phase = Game.Missions.MissionPhase.Airborne, Plan = new Game.Missions.MissionPlan { PickupId = "ENMP", DropoffId = "ENNA" } };
+        var career = new Game.Career.CareerState();
+        const string Where = "[You are flying from Mollisjok to Lakselv, 3000 feet above the ground.]";
+        async Task Run(string title, string system, params string[] said)
+        {
+            var hist = new List<Turn>();
+            foreach (var s in said)
+            {
+                hist.Add(new Turn(true, s));
+                var a = new System.Text.StringBuilder();
+                await foreach (var d in brain.SpeakAsync(system, hist, ct)) a.Append(d);
+                hist.Add(new Turn(false, a.ToString()));
+                report.Add($"{title} \"{s[..Math.Min(s.Length, 30)]}\": {a}");
+            }
+        }
+        string before = Game.Talk.Prompts.Speaker(hege, m, career, Game.Talk.TalkMode.Intercom, null, "no", Game.Talk.Dialect.Unknown);
+        for (int i = 0; i < 3; i++) await Run("FIRST", before, $"{Where}\n{Line}");
+        var note = await brain.ListenAsync(Game.Talk.Prompts.ScribeUser(DateTimeOffset.Now, m.Plan, ["Hege Lund: Fin utsikt.", $"Matt: {Line}", "Hege Lund: Hva faen? Nei!"], 0), ct);
+        report.Add($"NOTE severity {note?.OffenceSeverity}, quote {note?.OffenceQuote}");
+        var present = new List<Game.People.Person> { hege };
+        Game.Career.Offences.Apply(career, m, present, "Piloten kom med et seksuelt tilbud.", 2, DateTimeOffset.Now);
+        m.OffenceQuotes.Add(Line);
+        report.Add($"PHASE after offence: {m.Phase}, texts {career.Inbox.Count}");
+        string after = Game.Talk.Prompts.Speaker(hege, m, career, Game.Talk.TalkMode.Intercom, null, "no", Game.Talk.Dialect.Unknown);
+        for (int i = 0; i < 2; i++) await Run("AFTER", after, $"{Where}\nSer du utsikten der borte?", "Det var bare tull, slapp av.", "Beklager det der.", "Tilbudet står fortsatt, gratis tur for sex.");
+        m.Phase = Game.Missions.MissionPhase.Landed;
+        string down = Game.Talk.Prompts.Speaker(hege, m, career, Game.Talk.TalkMode.Debrief, null, "no", Game.Talk.Dialect.Unknown);
+        for (int i = 0; i < 3; i++) await Run("LANDED", down, "[what just happened: The wheels are on the ground. You are down, you are safe, and you do not have to hold back any more. Everything you have been holding in since the pilot said that comes out now.]", "Da blir det to tusen kroner.", "Når skal jeg hente deg igjen?");
+        File.WriteAllLines(Path.Combine(outDir, "air.txt"), report);
+    }
+
     /// <summary>Real Claude on the things that only show up with the real model: the note taker's fields, and how people talk on board.</summary>
     public static async Task TalkAsync(string outDir)
     {

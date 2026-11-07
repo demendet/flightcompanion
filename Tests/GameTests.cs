@@ -894,6 +894,58 @@ public class OffenceTests
     }
 
     [Fact]
+    public void In_the_air_they_stay_on_board_and_the_text_waits_until_they_are_off()
+    {
+        var c = new CareerState { Reputation = 50 };
+        var kari = new Person { Name = "Kari", Trust = 20 };
+        c.People.Add(kari);
+        var m = new Mission { CallerId = kari.Id, Phase = MissionPhase.Airborne, Plan = new MissionPlan { PriceNok = 2000 } };
+        c.Missions.Add(m);
+        Offences.Apply(c, m, [kari], "Piloten kom med et seksuelt tilbud.", 2, Now);
+        Assert.Equal(MissionPhase.Airborne, m.Phase);
+        Assert.True(m.PilotHarassed);
+        Assert.Empty(c.Inbox);
+        Assert.Equal(44, c.Reputation);
+
+        var review = ReviewMaker.Make(m, c, kari, Now, 120);
+        Assert.Equal(0, review.PayNok);
+        Assert.Equal(0, review.TipNok);
+        Assert.Equal(0.5, review.Stars);
+        ReviewMaker.Settle(m, review, c, Now);
+        Assert.DoesNotContain(c.Ledger, e => e.AmountNok > 0);
+        Assert.Single(c.Inbox);
+    }
+
+    [Fact]
+    public void Before_takeoff_they_simply_get_out()
+    {
+        var kari = new Person { Name = "Kari" };
+        var m = new Mission { CallerId = kari.Id, Phase = MissionPhase.Loaded };
+        Offences.Apply(new CareerState(), m, [kari], "x", 2, Now);
+        Assert.Equal(MissionPhase.Cancelled, m.Phase);
+    }
+
+    [Fact]
+    public void They_know_the_words_in_the_air_and_let_rip_on_the_ground()
+    {
+        var kari = new Person { Name = "Kari", Language = "no" };
+        var m = new Mission { CallerId = kari.Id, Phase = MissionPhase.Airborne, PilotOffended = true, PilotHarassed = true, OffenceQuotes = ["de eksakte ordene"], Plan = new MissionPlan { PickupId = "ENMP", DropoffId = "ENNA" } };
+        string air = Prompts.Speaker(kari, m, new CareerState(), TalkMode.Intercom, null, "no");
+        Assert.Contains("de eksakte ordene", air);
+        Assert.Contains("You cannot walk away or hang up", air);
+        Assert.DoesNotContain("GIVE THEM A CHANCE", air);
+        string ground = Prompts.Speaker(kari, m, new CareerState(), TalkMode.Debrief, null, "no");
+        Assert.Contains("de eksakte ordene", ground);
+        Assert.Contains("not paying one single krone", ground);
+    }
+
+    [Theory]
+    [InlineData("gratis tur for sex", "Gratis tur for SEX!", true)]
+    [InlineData("gratis tur for sex", "tur for sex", true)]
+    [InlineData("gratis tur for sex", "du er stygg", false)]
+    public void The_same_words_are_not_a_new_offence(string a, string b, bool same) => Assert.Equal(same, Offences.SameWords(a, b));
+
+    [Fact]
     public void Everyone_is_told_never_to_go_along_with_it()
     {
         string prompt = Prompts.Speaker(new Person { Name = "Kari" }, null, new CareerState(), TalkMode.Phone, null, "no");

@@ -287,7 +287,7 @@ public sealed class GameHost : IDisposable
         {
             Mic.HalfDuplexHold = Settings.UsingSpeakers && _talk.IsSpeaking;
             if (_endCallSoon && !_talk.IsSpeaking) HangUp();
-            else if (_talkMode == TalkMode.Intercom && now >= _nextChatter && _chatterLeft > 0 && !_talk.IsSpeaking && (now - _lastPilotWords).TotalSeconds > 25)
+            else if (_talkMode == TalkMode.Intercom && !OnBoardWithHarasser && now >= _nextChatter && _chatterLeft > 0 && !_talk.IsSpeaking && (now - _lastPilotWords).TotalSeconds > 25)
             {
                 _chatterLeft--;
                 ScheduleChatter(now);
@@ -643,7 +643,7 @@ public sealed class GameHost : IDisposable
         if (_talk is null || _talkMode != TalkMode.Intercom || t.OnGround || (now - _lastSightCheck).TotalSeconds < 5) return;
         _lastSightCheck = now;
         _map.RefreshIfMoved(t.Lat, t.Lon, _stop.Token);
-        if (_talk.IsSpeaking || (now - _lastPilotWords).TotalSeconds < 8) return;
+        if (_talk.IsSpeaking || (now - _lastPilotWords).TotalSeconds < 8 || OnBoardWithHarasser) return;
 
         if (_talkMission?.Dropoff is { } to && _approachCalledFor != _talkMission.Id && Geo.DistanceM(t.Lat, t.Lon, to.Lat, to.Lon) < 9000)
         {
@@ -711,9 +711,15 @@ public sealed class GameHost : IDisposable
     private int _offenceThisTalk;
     private bool _apologisedThisTalk;
 
+    /// <summary>Nobody chats about the view with someone who just said that, and the flight's friendly moments stay quiet.</summary>
+    private bool OnBoardWithHarasser => _talkMission?.PilotHarassed == true && Offences.StuckTogether(_talkMission);
+
     private void HandleOffence(Mission? m, PlanPatch p)
     {
-        if (p.OffenceSeverity is not { } severity || severity <= _offenceThisTalk) return;
+        if (p.OffenceSeverity is not { } severity) return;
+        bool stuck = Offences.StuckTogether(m);
+        bool again = severity <= _offenceThisTalk;
+        if (again && !(stuck && severity >= 2)) return;
         var pilotLines = _talk?.TranscriptLines(Career.PilotName).Where(l => l.StartsWith(Career.PilotName + ":")).ToList() ?? [];
         if (!Offences.SaidByPilot(p.OffenceQuote, pilotLines))
         {
@@ -723,13 +729,32 @@ public sealed class GameHost : IDisposable
         _offenceThisTalk = severity;
         var present = _talk?.Cast.Select(c => c.Person).ToList() ?? [];
         string what = string.IsNullOrWhiteSpace(p.OffenceNote) ? L.T("You behaved badly towards them") : p.OffenceNote!;
-        what += " " + L.F("The pilot said: \"{0}\"", p.OffenceQuote!.Trim());
-        Offences.Apply(Career, m, present, what, severity, DateTimeOffset.Now);
+        string quote = p.OffenceQuote!.Trim();
+        what += " " + L.F("The pilot said: \"{0}\"", quote);
+        if (again)
+        {
+            // The note taker reads the whole talk every time, so the same words come back. Only new words are a new offence.
+            if (m!.OffenceQuotes.Any(q => Offences.SameWords(q, quote))) return;
+            Offences.Again(present, what, DateTimeOffset.Now);
+        }
+        else
+        {
+            bool wasLoaded = m?.Phase == MissionPhase.Loaded;
+            Offences.Apply(Career, m, present, what, severity, DateTimeOffset.Now);
+            if (wasLoaded && severity >= 2 && Sim.Connected && Sim.Stations.Count > 0) Sim.SetStations(StationMapper.Empty(Sim.Stations));
+        }
+        m?.OffenceQuotes.Add(quote);
         Log.Info("Game", $"Offence, severity {severity}: {what}");
+        if (severity >= 2) Toast?.Invoke(what);
+        if (stuck)
+        {
+            // The next thing they say comes from someone who knows exactly what happened, and they stay on board.
+            if (_talk is { } talk) talk.ChangeScene(SystemFor(talk.Cast, m!, _talkMode, null));
+            return;
+        }
         if (severity >= 2)
         {
-            Toast?.Invoke(what);
-            if (_talkMode is not TalkMode.Intercom and not TalkMode.Debrief) _endCallSoon = true;
+            _endCallSoon = true;
             if (m is not null) DespawnPeople(m);
         }
     }
@@ -1019,7 +1044,7 @@ public sealed class GameHost : IDisposable
         if (Latest is { } t) { Career.LastLat = t.Lat; Career.LastLon = t.Lon; }
 
         var tpl = MissionCatalog.ById(m.TemplateId);
-        if (tpl?.HasReturn == true)
+        if (tpl?.HasReturn == true && !m.PilotHarassed)
         {
             var when = m.Plan.ReturnTime ?? TripTiming.DefaultReturn(now, _rng);
             var back = MissionFactory.CreateReturn(m, when, now);
@@ -1215,16 +1240,18 @@ public sealed class GameHost : IDisposable
                 break;
             case StopReached stop:
                 _lastSightComment = DateTimeOffset.Now;
-                _talk?.React($"You are now flying over {stop.Stop.Name}, which is what you wanted to see. {stop.Stop.Note}. Be excited about it, in your own way");
+                if (!OnBoardWithHarasser) _talk?.React($"You are now flying over {stop.Stop.Name}, which is what you wanted to see. {stop.Stop.Note}. Be excited about it, in your own way");
                 Toast?.Invoke(L.F("{0}: check", stop.Stop.Name));
                 break;
             case MissionLanded l:
-                if (l.Mission.Stops.Where(x => !x.Seen).Select(x => x.Name).ToList() is { Count: > 0 } missed)
+                if (!l.Mission.PilotHarassed && l.Mission.Stops.Where(x => !x.Seen).Select(x => x.Name).ToList() is { Count: > 0 } missed)
                     _talk?.React($"The pilot has landed without ever flying over {string.Join(" or ", missed)}, which is what you paid for. You are unhappy about it, and you say so");
                 if (_talk is not null && _talkMission == l.Mission && Career.PersonById(l.Mission.CallerId) is { } who)
                 {
                     _talkMode = TalkMode.Debrief;
                     _talk.ChangeScene(SystemFor(_talk.Cast, l.Mission, TalkMode.Debrief, null));
+                    if (l.Mission.PilotHarassed)
+                        _talk.React("The wheels are on the ground. You are down, you are safe, and you do not have to hold back any more. Everything you have been holding in since the pilot said that comes out now");
                 }
                 break;
             case ReadyToDeplane:
@@ -1289,6 +1316,8 @@ public sealed class GameHost : IDisposable
         string lang = SpeechText.VoiceLanguage(who.Language, who.SpeaksNorwegian, Mic.LastLanguage, Settings.TalkLanguage);
         // Same line for whoever says it, so the choice of words is made once.
         bool talkingNow = (now - _lastPilotWords).TotalSeconds < 3;
+        // After what the pilot said, nobody says "nice landing". Danger still gets a reaction.
+        if (_talkMission?.PilotHarassed == true && e.Kind is FlightEventKind.Takeoff or FlightEventKind.Landing or FlightEventKind.Sightseeing) return;
 
         var lines = ReactionLines.For(e.Kind, lang);
         if (lines.Count > 0 && !talkingNow)

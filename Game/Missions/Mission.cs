@@ -96,6 +96,9 @@ public sealed class Mission
     public bool Sightseeing { get; set; }
     public List<TourStop> Stops { get; set; } = [];
     public bool PilotOffended { get; set; }
+    /// <summary>A serious offence on this very trip, with the customer still on board.</summary>
+    public bool PilotHarassed { get; set; }
+    public List<string> OffenceQuotes { get; set; } = [];
     public string? ArcId { get; set; }
     public int ArcEpisode { get; set; }
     public string? FollowUpOf { get; set; }

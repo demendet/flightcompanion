@@ -192,10 +192,13 @@ public static class Offences
             p.Note(now, what, change, serious);
             p.Memories.Add(new MemoryNote(now, what));
         }
+        bool stuckTogether = StuckTogether(m);
         if (m is not null)
         {
             m.PilotOffended = true;
-            if (serious && m.Phase is MissionPhase.Ringing or MissionPhase.Negotiating or MissionPhase.Booked or MissionPhase.AtPickup or MissionPhase.Boarding)
+            if (serious) m.PilotHarassed = true;
+            // Until the wheels leave the ground they can simply get out.
+            if (serious && m.Phase is MissionPhase.Ringing or MissionPhase.Negotiating or MissionPhase.Booked or MissionPhase.AtPickup or MissionPhase.Boarding or MissionPhase.Loaded)
                 m.Phase = MissionPhase.Cancelled;
         }
         if (!serious) return;
@@ -204,8 +207,31 @@ public static class Offences
         // People up here talk. Those you have dealt with hear about it.
         foreach (var other in c.People.Where(x => !present.Contains(x) && (x.Talks > 0 || x.FlightsWithYou > 0)))
             other.Note(now, L.T("Heard how you treated a customer"), -4);
-        if (present.Count > 0)
-            c.Inbox.Add(new SmsMessage(now, present[0].Name, L.T("Never contact me again. I am telling people what you said.")));
+        // Nobody texts the pilot from the seat beside them. It comes when they have got away.
+        if (present.Count > 0 && !stuckTogether) NeverAgain(c, present[0].Name, now);
+    }
+
+    /// <summary>In the air, or just down and still on board: they cannot walk away or hang up, and the job goes on.</summary>
+    public static bool StuckTogether(Mission? m) => m?.Phase is MissionPhase.Airborne or MissionPhase.Landed;
+
+    public static void NeverAgain(CareerState c, string who, DateTimeOffset now)
+        => c.Inbox.Add(new SmsMessage(now, who, L.T("Never contact me again. I am telling people what you said.")));
+
+    /// <summary>Doing it again on the same flight. The standing already took the blow, so this one lands on the people on board.</summary>
+    public static void Again(IReadOnlyList<Person> present, string what, DateTimeOffset now)
+    {
+        foreach (var p in present)
+        {
+            p.Note(now, what, -10, true);
+            p.Memories.Add(new MemoryNote(now, what));
+        }
+    }
+
+    public static bool SameWords(string a, string b)
+    {
+        static string Plain(string s) => new(s.Where(char.IsLetterOrDigit).Select(char.ToLowerInvariant).ToArray());
+        string x = Plain(a), y = Plain(b);
+        return x.Length > 0 && y.Length > 0 && (x.Contains(y) || y.Contains(x));
     }
 }
 
@@ -304,6 +330,7 @@ public static class ReviewMaker
         if (!s.LandedAtDestination) stars -= 1.5;
         stars -= m.Stops.Count(x => !x.Seen) * 1.3;
         if (m.PilotOffended) stars -= 3;
+        if (m.PilotHarassed) stars = 0;
         if (m.WentOverweight) stars -= 0.2;
         stars = Math.Clamp(stars, 0.5, 5);
 
@@ -317,9 +344,10 @@ public static class ReviewMaker
         if (!s.LandedAtDestination) points.Add(L.T("Did not land where agreed"));
         foreach (var missed in m.Stops.Where(x => !x.Seen)) points.Add(L.F("Never flew to {0}", missed.Name));
         if (m.PilotOffended) points.Add(L.T("You behaved badly towards them"));
+        if (m.PilotHarassed) points.Add(L.T("They refused to pay for the flight"));
 
         double agreed = m.Plan.PriceNok ?? 0;
-        double pay = stars < 1.5 ? agreed * 0.5 : agreed;
+        double pay = m.PilotHarassed ? 0 : stars < 1.5 ? agreed * 0.5 : agreed;
         double wealth = lead?.Wealth ?? 0.5;
         double tip = stars >= 4.3 && !m.PilotOffended ? agreed * (0.03 + 0.2 * wealth) * (stars - 3.8) : 0;
         double repair = grade switch { Flight.LandingGrade.Crash => 60000, Flight.LandingGrade.Hard => 9000, _ => 0 };
@@ -341,7 +369,8 @@ public static class ReviewMaker
     {
         m.Review = r;
         m.Phase = MissionPhase.Complete;
-        c.Book(now, L.F("{0}: fare", m.Title), r.PayNok);
+        if (r.PayNok > 0 || !m.PilotHarassed) c.Book(now, L.F("{0}: fare", m.Title), r.PayNok);
+        if (m.PilotHarassed && c.PersonById(m.CallerId) is { } wronged) Offences.NeverAgain(c, wronged.Name, now);
         if (r.TipNok > 0) c.Book(now, L.F("{0}: tip", m.Title), r.TipNok);
         if (r.RepairNok > 0) c.Book(now, L.F("{0}: mechanic", m.Title), -r.RepairNok);
         c.Reputation = Math.Clamp(c.Reputation + r.ReputationDelta, 0, 100);
