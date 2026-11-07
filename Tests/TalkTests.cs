@@ -205,6 +205,15 @@ public class HangUpTests
     [InlineData("Vi ses på stripa.", "Vi ses på stripa.", false)]
     [InlineData("Jeg legger på fem hundre kroner, jeg.", "Jeg legger på fem hundre kroner, jeg.", false)]
     [InlineData("Du legger på bagasjen selv.", "Du legger på bagasjen selv.", false)]
+    // From a real call: she was telling what happened last time, and in the middle of asking about the flight.
+    [InlineData("Du ringte meg og sa de hemmelige greiene dine om kroppen min, og eg la på.", "Du ringte meg og sa de hemmelige greiene dine om kroppen min, og eg la på.", false)]
+    [InlineData("Da la jeg på.", "Da la jeg på.", false)]
+    [InlineData("You said that, and I hung up on you.", "You said that, and I hung up on you.", false)]
+    [InlineData("Hvis du sier det en gang til, legger jeg på.", "Hvis du sier det en gang til, legger jeg på.", false)]
+    [InlineData("Ta det rolig, ellers legger jeg på!", "Ta det rolig, ellers legger jeg på!", false)]
+    [InlineData("Ingrid la på.", "", true)]
+    [InlineData("Eg legg på no.", "Eg legg på no.", true)]
+    [InlineData("Det her e ikkje greit, og eg legg på no, og eg kjem te å fortelle folk.", "Det her e ikkje greit, og eg legg på no, og eg kjem te å fortelle folk.", true)]
     public void Hanging_up_is_an_action_and_narration_is_never_read_aloud(string said, string text, bool hang)
     {
         var (t, h) = SpeechText.TakeHangup(said);
@@ -215,6 +224,12 @@ public class HangUpTests
 
 public class HangUpStreamTests
 {
+    [Theory]
+    [InlineData("Kor mye tar du for turen, då?", false)]
+    [InlineData("Kor fort kan du vere der?  ", false)]
+    [InlineData("Ikke ring meg igjen.", true)]
+    public void A_reply_that_asks_something_never_ends_the_call(string last, bool ends) => Assert.Equal(ends, SpeechText.ReplyEndsCall(last));
+
     /// <summary>The token comes last with no full stop after it, so it only ever arrives when the reply is flushed. This is what broke.</summary>
     [Theory]
     [InlineData("Nei, det er ferdig. Ikke ring meg igjen. <<hangup>>")]

@@ -41,7 +41,6 @@ public sealed class GameHost : IDisposable
     private Conversation? _talk;
     private Mission? _talkMission;
     private TalkMode _talkMode;
-    private CancellationTokenSource? _scribeCts;
     private bool _endCallSoon;
     private DateTimeOffset _lastReaction = DateTimeOffset.MinValue;
     private DateTimeOffset _nextChatter = DateTimeOffset.MaxValue;
@@ -503,8 +502,6 @@ public sealed class GameHost : IDisposable
         _talkMission = m;
         _talkMode = mode;
         _endCallSoon = false;
-        _offenceThisTalk = 0;
-        _apologisedThisTalk = false;
         _chat.Clear();
         _partial = "";
         var fx = !Settings.RadioEffect ? VoiceFx.Clear : mode switch { TalkMode.Phone => VoiceFx.Phone, TalkMode.Intercom => VoiceFx.Intercom, _ => VoiceFx.Clear };
@@ -688,16 +685,16 @@ public sealed class GameHost : IDisposable
     {
         if (_talk != talk) return;
         var m = _talkMission;
-        _scribeCts?.Cancel();
+        talk.NoteCts?.Cancel();
         var cts = new CancellationTokenSource();
-        _scribeCts = cts;
+        talk.NoteCts = cts;
         string prompt = Prompts.ScribeUser(DateTimeOffset.Now, m?.Plan ?? new MissionPlan(), talk.TranscriptLines(Career.PilotName).TakeLast(30), m is null ? 15 : MinutesAwayFor(m));
         _ = Task.Run(async () =>
         {
             try
             {
                 var patch = await Brain.ListenAsync(prompt, cts.Token).ConfigureAwait(false);
-                if (patch is not null) Post(() => ApplyPatch(m, patch));
+                if (patch is not null) Post(() => ApplyPatch(talk, m, patch));
             }
             catch (OperationCanceledException) { }
             catch (Exception ex) when (ex is not OutOfMemoryException)
@@ -708,26 +705,28 @@ public sealed class GameHost : IDisposable
         });
     }
 
-    private int _offenceThisTalk;
-    private bool _apologisedThisTalk;
-
     /// <summary>Nobody chats about the view with someone who just said that, and the flight's friendly moments stay quiet.</summary>
     private bool OnBoardWithHarasser => _talkMission?.PilotHarassed == true && Offences.StuckTogether(_talkMission);
 
-    private void HandleOffence(Mission? m, PlanPatch p)
+    /// <summary>
+    /// The note taker often answers after the customer has already hung up, which is exactly when an offence matters most. So it
+    /// works from the talk it was about, not whichever talk is open now, and it never touches a call that has started since.
+    /// </summary>
+    private void HandleOffence(Conversation talk, Mission? m, PlanPatch p)
     {
         if (p.OffenceSeverity is not { } severity) return;
         bool stuck = Offences.StuckTogether(m);
-        bool again = severity <= _offenceThisTalk;
+        bool again = severity <= talk.OffenceLevel;
         if (again && !(stuck && severity >= 2)) return;
-        var pilotLines = _talk?.TranscriptLines(Career.PilotName).Where(l => l.StartsWith(Career.PilotName + ":")).ToList() ?? [];
+        var pilotLines = talk.TranscriptLines(Career.PilotName).Where(l => l.StartsWith(Career.PilotName + ":")).ToList();
         if (!Offences.SaidByPilot(p.OffenceQuote, pilotLines))
         {
-            Log.Info("Game", $"Ignored an offence with no words from the pilot behind it: {p.OffenceNote}");
+            Log.Info("Game", $"Ignored an offence with no words from the pilot behind it: {p.OffenceNote} Quote: {p.OffenceQuote}");
             return;
         }
-        _offenceThisTalk = severity;
-        var present = _talk?.Cast.Select(c => c.Person).ToList() ?? [];
+        talk.OffenceLevel = severity;
+        if (talk.Archived is { } archived) archived.Offence = severity;
+        var present = talk.Cast.Select(c => c.Person).ToList();
         string what = string.IsNullOrWhiteSpace(p.OffenceNote) ? L.T("You behaved badly towards them") : p.OffenceNote!;
         string quote = p.OffenceQuote!.Trim();
         what += " " + L.F("The pilot said: \"{0}\"", quote);
@@ -749,34 +748,37 @@ public sealed class GameHost : IDisposable
         if (stuck)
         {
             // The next thing they say comes from someone who knows exactly what happened, and they stay on board.
-            if (_talk is { } talk) talk.ChangeScene(SystemFor(talk.Cast, m!, _talkMode, null));
+            if (talk == _talk) talk.ChangeScene(SystemFor(talk.Cast, m!, _talkMode, null));
             return;
         }
         if (severity >= 2)
         {
-            _endCallSoon = true;
+            if (talk == _talk) _endCallSoon = true;
             if (m is not null) DespawnPeople(m);
         }
     }
 
-    private void ApplyPatch(Mission? m, PlanPatch p)
+    private void ApplyPatch(Conversation talk, Mission? m, PlanPatch p, bool finalPass = false)
     {
-        HandleOffence(m, p);
-        if (p.Apology == true && !_apologisedThisTalk && _offenceThisTalk == 0 && _talk is { } sorry)
+        HandleOffence(talk, m, p);
+        if (p.Apology == true && !talk.Apologised && talk.OffenceLevel == 0)
         {
-            _apologisedThisTalk = true;
-            Offences.Apologise(sorry.Cast.Select(c => c.Person).ToList(), DateTimeOffset.Now);
+            talk.Apologised = true;
+            Offences.Apologise(talk.Cast.Select(c => c.Person).ToList(), DateTimeOffset.Now);
             Log.Info("Game", "The pilot said sorry");
         }
+        // A late answer about a talk that is over may only change what was said in it. The final pass over a call settles the booking.
+        bool current = talk == _talk;
+        if (!current && !finalPass) { Save(); Changed?.Invoke(); return; }
         if (m is null)
         {
-            if (p.CallIsOver == true && _talkMode == TalkMode.Phone) _endCallSoon = true;
+            if (current && p.CallIsOver == true && _talkMode == TalkMode.Phone) _endCallSoon = true;
             Save();
             Changed?.Invoke();
             return;
         }
         if (m.Phase == MissionPhase.Cancelled) { Save(); Changed?.Invoke(); return; }
-        if (_talkMode is TalkMode.Intercom or TalkMode.Debrief) { Changed?.Invoke(); return; }
+        if (current && _talkMode is TalkMode.Intercom or TalkMode.Debrief) { Changed?.Invoke(); return; }
         if (p.TourPlace is { Length: > 1 } place && !m.Stops.Any(x => x.Name.Contains(place, StringComparison.OrdinalIgnoreCase)))
             _ = AddStopAsync(m, place);
         var changes = PlanPatcher.Apply(m.Plan, p, DateTimeOffset.Now, Clock.Zone);
@@ -793,17 +795,32 @@ public sealed class GameHost : IDisposable
             if (Career.PersonById(m.CallerId) is { } who) who.Trust = Math.Clamp(who.Trust - 6, -100, 100);
             Toast?.Invoke(L.F("Cancelled: {0}", m.Title));
         }
-        if (p.CallIsOver == true && _talkMode == TalkMode.Phone) _endCallSoon = true;
+        if (current && p.CallIsOver == true && _talkMode == TalkMode.Phone) _endCallSoon = true;
         Changed?.Invoke();
     }
 
     public void HangUp() => Post(HangUpNow);
+
+    /// <summary>The Norwegian busy tone, so nobody keeps talking to a dead line.</summary>
+    private async Task BusyToneAsync()
+    {
+        try
+        {
+            for (int i = 0; i < 3; i++)
+            {
+                Audio.Beep(425, 0.25);
+                await Task.Delay(500, _stop.Token).ConfigureAwait(false);
+            }
+        }
+        catch (OperationCanceledException) { }
+    }
 
     private void HangUpNow()
     {
         if (_talk is null) return;
         var m = _talkMission;
         var mode = _talkMode;
+        var talk = _talk;
         var transcript = _talk.TranscriptLines(Career.PilotName).ToList();
         var spokenTo = _talk.Cast.Select(c => c.Person).ToList();
         if (transcript.Count >= 2)
@@ -817,7 +834,12 @@ public sealed class GameHost : IDisposable
         }
         CloseTalkObject();
         Mic.Stop();
-        Audio.Beep(520, 0.1);
+        if (talk.HungUpOnPilot)
+        {
+            _ = BusyToneAsync();
+            Toast?.Invoke(L.F("{0} hung up", talk.Person.Name));
+        }
+        else Audio.Beep(520, 0.1);
         _talkMission = null;
         _endCallSoon = false;
 
@@ -830,7 +852,7 @@ public sealed class GameHost : IDisposable
                 try
                 {
                     var patch = await Brain.ListenAsync(Prompts.ScribeUser(DateTimeOffset.Now, m.Plan, transcript, away), _stop.Token).ConfigureAwait(false);
-                    Post(() => { if (patch is not null) ApplyPatch(m, patch); FinishNegotiation(m); });
+                    Post(() => { if (patch is not null) ApplyPatch(talk, m, patch, finalPass: true); FinishNegotiation(m); });
                 }
                 catch (Exception ex) when (ex is not OutOfMemoryException)
                 {
@@ -889,18 +911,19 @@ public sealed class GameHost : IDisposable
         if (_talk is not { } talk) return;
         var lines = talk.TranscriptLines(Career.PilotName).ToList();
         if (lines.Count == 0) return;
-        Career.Talks.Add(new TalkRecord
+        var record = new TalkRecord
         {
-            When = DateTimeOffset.Now, Mode = _talkMode.ToString(), MissionTitle = _talkMission?.Title, Lines = lines, HungUp = talk.HungUpOnPilot, Offence = _offenceThisTalk,
+            When = DateTimeOffset.Now, Mode = _talkMode.ToString(), MissionTitle = _talkMission?.Title, Lines = lines, HungUp = talk.HungUpOnPilot, Offence = talk.OffenceLevel,
             PersonIds = talk.Cast.Select(c => c.Person.Id).ToList(), Names = talk.Cast.Select(c => c.Person.Name).ToList(),
-        });
+        };
+        talk.Archived = record;
+        Career.Talks.Add(record);
         if (Career.Talks.Count > 500) Career.Talks.RemoveRange(0, Career.Talks.Count - 500);
     }
 
     private void CloseTalkObject()
     {
         ArchiveTalk();
-        _scribeCts?.Cancel();
         _talk?.Dispose();
         _talk = null;
         Mic.HalfDuplexHold = false;

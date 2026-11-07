@@ -298,6 +298,7 @@ public static class L
         ["Add your Claude and ElevenLabs keys in Settings first"] = "Legg inn nøklene for Claude og ElevenLabs i innstillingene først",
         ["Booked: {0}, {1} at {2}"] = "Bestilt: {0}, {1} {2}",
         ["Cancelled: {0}"] = "Avlyst: {0}",
+        ["{0} hung up"] = "{0} la på",
         ["Land and shut down the engine first"] = "Land og stopp motoren først",
         ["There is no fuel out here"] = "Det finnes ikke drivstoff her ute",
         ["No fuel cached at {0}. Fly some in."] = "Ingen lagret drivstoff på {0}. Fly inn noe.",

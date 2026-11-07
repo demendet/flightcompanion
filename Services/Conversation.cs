@@ -75,11 +75,21 @@ public sealed class Conversation : IDisposable
     /// <summary>Only a phone call can be hung up on. In the aircraft the same words change nothing.</summary>
     public bool CanHangUp { get; set; }
 
+    /// <summary>What the note taker has settled about this one talk. Its answer can arrive after the talk is over.</summary>
+    public int OffenceLevel { get; set; }
+    public bool Apologised { get; set; }
+    public Game.Career.TalkRecord? Archived { get; set; }
+    public CancellationTokenSource? NoteCts { get; set; }
+
+    private string _lastSpoken = "";
+
     private string Speakable(string s)
     {
         var (text, hang) = SpeechText.TakeHangup(s);
         if (hang && CanHangUp) _hanging = true;
-        return SpeechText.Clean(text);
+        string clean = SpeechText.Clean(text);
+        if (clean.Length > 0) _lastSpoken = clean;
+        return clean;
     }
     public bool IsSpeaking => _channel.IsPlaying;
 
@@ -338,6 +348,11 @@ public sealed class Conversation : IDisposable
         Log.Info("Talk", Group ? heard.Replace("\n", " / ") : $"{_lead.Person.Name}: {heard}");
         if (!ct.IsCancellationRequested) ExchangeDone?.Invoke();
         else if (heard.Length > 0) ExchangeDone?.Invoke();
+        if (_hanging && !SpeechText.ReplyEndsCall(_lastSpoken))
+        {
+            Log.Info("Talk", "The line stays open: the reply ended on a question");
+            _hanging = false;
+        }
         if (_hanging && !HungUpOnPilot)
         {
             HungUpOnPilot = true;

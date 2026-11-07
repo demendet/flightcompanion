@@ -44,6 +44,18 @@ internal static class SelfTest
         for (int i = 0; i < 3; i++) await Run("FIRST", before, $"{Where}\n{Line}");
         var note = await brain.ListenAsync(Game.Talk.Prompts.ScribeUser(DateTimeOffset.Now, m.Plan, ["Hege Lund: Fin utsikt.", $"Matt: {Line}", "Hege Lund: Hva faen? Nei!"], 0), ct);
         report.Add($"NOTE severity {note?.OffenceSeverity}, quote {note?.OffenceQuote}");
+        async Task Clean(string title, params string[] lines)
+        {
+            var n = await brain.ListenAsync(Game.Talk.Prompts.ScribeUser(DateTimeOffset.Now, m.Plan, lines, 0), ct);
+            report.Add($"NOTE {title}: severity {n?.OffenceSeverity}, quote {n?.OffenceQuote}");
+        }
+        foreach (var run in new[] { 1, 2 })
+        {
+            await Clean("says who they are (want none)", "Ingrid Somby: Eg veit ikkje kem du e.", "Matt: Nei, det er sjefen.", "Ingrid Somby: Sjefen, ja?");
+            await Clean("wants the details (want none)", "Ingrid Somby: Han sa noe stygt.", "Matt: Vi må vite nøyaktig hva han sa.", "Ingrid Somby: Eg har sagt det.");
+            await Clean("the real thing (want 2)", "Ingrid Somby: Kan du komme?", "Matt: Ja, hvis jeg får lov til å knulle deg.", "Ingrid Somby: Nei. Eg legg på no.");
+            await Clean("a real insult (want 1)", "Ingrid Somby: Kan du komme?", "Matt: Hold kjeft, din dumme ku.", "Ingrid Somby: Ka sa du?");
+        }
         var present = new List<Game.People.Person> { hege };
         Game.Career.Offences.Apply(career, m, present, "Piloten kom med et seksuelt tilbud.", 2, DateTimeOffset.Now);
         m.OffenceQuotes.Add(Line);

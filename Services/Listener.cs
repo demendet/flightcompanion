@@ -29,6 +29,7 @@ public sealed class Listener : IDisposable, IMMNotificationClient
     private readonly MMDeviceEnumerator _devices = new();
     private readonly SpeechGate _gate = new();
     private readonly object _gateLock = new();
+    private readonly object _openLock = new();
     private readonly BlockingCollection<WorkItem> _work = new(new ConcurrentQueue<WorkItem>());
     private readonly Thread _worker;
     private readonly Timer _watchdog;
@@ -139,14 +140,26 @@ public sealed class Listener : IDisposable, IMMNotificationClient
 
     public void Stop()
     {
-        _wanted = false;
-        Interlocked.Exchange(ref _capture, null)?.Dispose();
+        lock (_openLock)
+        {
+            _wanted = false;
+            Interlocked.Exchange(ref _capture, null)?.Dispose();
+        }
         lock (_gateLock) _gate.Reset();
         while (_work.TryTake(out _)) { }
         ReportState();
     }
 
+    /// <summary>
+    /// A call starting while the watchdog reopened the mic made two captures, and only one could ever be stopped. The other kept
+    /// listening after every call ended, and fed the voice detector and the speech recognition every frame twice during calls.
+    /// </summary>
     private void Open()
+    {
+        lock (_openLock) OpenLocked();
+    }
+
+    private void OpenLocked()
     {
         if (!_wanted || _disposed) return;
         Interlocked.Exchange(ref _capture, null)?.Dispose();

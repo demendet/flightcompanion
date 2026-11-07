@@ -69,22 +69,33 @@ public static partial class SpeechText
         bool token = HangToken().IsMatch(s);
         string text = HangToken().Replace(s, " ").Trim();
         if (!text.Any(char.IsLetterOrDigit)) text = "";
-        bool hangWords = HangWords().IsMatch(text);
+        bool now = HangingNow().IsMatch(text), before = HungUpBefore().IsMatch(text);
         bool firstPerson = Speaker().IsMatch(text);
-        if ((hangWords || LineWords().IsMatch(text)) && !firstPerson) return ("", token || hangWords);
-        return (text, token || hangWords);
+        // No person in it, so it is narration: never read aloud, and it counts.
+        if ((now || before || LineWords().IsMatch(text)) && !firstPerson) return ("", token || now || before);
+        // "Og eg la på" is about last time, and "hvis du sier det igjen, legger jeg på" is a warning. Only "nå legger jeg på" ends a call.
+        return (text, token || (now && !OnlyIf().IsMatch(text)));
     }
+
+    /// <summary>Nobody asks a question and hangs up before the answer. Whatever the reply said earlier, the line stays open.</summary>
+    public static bool ReplyEndsCall(string lastSentence) => !lastSentence.TrimEnd().EndsWith('?');
 
     [GeneratedRegex(@"(<<|\[)\s*hang\s*-?\s*up\s*(>>|\])", RegexOptions.IgnoreCase)]
     private static partial Regex HangToken();
 
-    [GeneratedRegex(@"\b(hangs? up|hung up|hanging up|ends the call)\b|\b(legger|la)\s+(jeg\s+|æ\s+|eg\s+)?på(?=\s*($|[.!,]))", RegexOptions.IgnoreCase)]
-    private static partial Regex HangWords();
+    [GeneratedRegex(@"\b(hangs? up|hanging up|ends the call)\b|\b(legger|legg)\s+(jeg\s+|æ\s+|eg\s+)?på(?=\s*(nå|no|nu)?\s*($|[.!,]))", RegexOptions.IgnoreCase)]
+    private static partial Regex HangingNow();
+
+    [GeneratedRegex(@"\bhung up\b|\bla\s+(jeg\s+|æ\s+|eg\s+)?på(?=\s*($|[.!,]))", RegexOptions.IgnoreCase)]
+    private static partial Regex HungUpBefore();
+
+    [GeneratedRegex(@"\b(hvis|viss|om|dersom|ellers|neste gang|if|or|unless)\b", RegexOptions.IgnoreCase)]
+    private static partial Regex OnlyIf();
 
     [GeneratedRegex(@"\b(line (goes|went) dead|the line|call ends|linja|linjen|røret|dødt? i)\b", RegexOptions.IgnoreCase)]
     private static partial Regex LineWords();
 
-    [GeneratedRegex(@"\b(jeg|æ|eg|je|du|dæ|vi|dere)\b", RegexOptions.IgnoreCase)]
+    [GeneratedRegex(@"\b(jeg|æ|eg|je|du|dæ|vi|dere|i|you|we)\b", RegexOptions.IgnoreCase)]
     private static partial Regex Speaker();
 
     public static string Clean(string s) => Spaces().Replace(Stage().Replace(s, " "), " ").Trim();
